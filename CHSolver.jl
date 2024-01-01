@@ -4,17 +4,17 @@ using ProgressMeter
 
 # physical parameters
 const γ = 1.0 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
-const σ = 1.5 # interface width [nm]
+const σ = 0.8 # interface width [nm]
+const ζ = 100.0 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
-const Nx, Ny = 100, 200 # grid size
-const dh = 0.1 # grid spacing [nm]
-const dt = 0.001 # time step [ns]
+const Nx, Ny = 30, 30 # grid size
+const dh = 1.0 # grid spacing [nm]
+const dt = 0.01 # time step [ns]
 # deduced physical parameters
-temp = 3*γ/8/σ
-const ϵ = 1.0#8*temp/σ*σ
-const K = 1.0#temp/dh/dh # scaled line tension
+const K = 1.0#3*γ/8/σ
+const ϵ = 1.0#8*K/σ*σ
 println("K = ", K, " [kT/nm^2]", ", ϵ = ", ϵ, " [kT/nm^2]")
 
 function laplacian(c)
@@ -35,18 +35,27 @@ function laplacian(c)
 end
 
 function f(c)
-    return m*laplacian(-ϵ*c+ϵ*c.*c.*c-K*laplacian(c))
+    exact = m*laplacian(-ϵ*c+ϵ*c.*c.*c-K*laplacian(c))
+    # add noise
+    noise = sqrt(ζ)*randn(Nx,Ny)
+    noise .-= mean(noise)
+    return exact + noise
 end
 
-function solver(c, Nsteps)
+function solver(c, Nsteps, save_every=100)
     c_list = [c]
     @showprogress for i in 1:Nsteps
         c = copy(c)
-        # midpoint method
-        c_mid = c .+ 0.5*dt*f(c)
-        c .+= dt*f(c_mid)
+        # RK4 time stepping
+        k1 = dt*f(c)
+        k2 = dt*f(c+k1/2)
+        k3 = dt*f(c+k2/2)
+        k4 = dt*f(c+k3)
+        c += (k1+2*k2+2*k3+k4)/6
         # save concentration
-        push!(c_list, c)
+        if i%save_every == 0
+            push!(c_list, c)
+        end
     end
     return c_list
 end
@@ -63,9 +72,9 @@ end
 
 
 # make initial uniform grid + random uniform noise
-c = 1.0e-5*rand(Nx,Ny)
+c = rand(Nx,Ny)
 c .+= c₀ - mean(c)
 # solve
-c_list = solver(c, 100)
+c_list = solver(c, 250000, 1000)
 #println(c_list[end])
 animate_time_evolution(c_list)
