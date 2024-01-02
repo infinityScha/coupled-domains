@@ -3,14 +3,18 @@ using Plots
 using ProgressMeter
 using FFTW
 
+# set GR plotting backend
+gr()
+
 # Semi-implicit Fourier spectral method for the Cahn-Hilliard equation 
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
 const γ = 1.0 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
 const σ = 0.8 # interface width [nm]
-const λ = 0.01 # interleaflet coupling [kT/nm^2]
-const δ = 0.0 #0.1 # sinusoidal perturbation amplitude kT/nm^2
+const λ = 0.03 # interleaflet coupling [kT/nm^2]
+const δ = 0.01 # sinusoidal perturbation amplitude kT/nm^2
+const n = 1 # field periodicity
 const ζ = 0.05 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
 const c₀ = 0.0 # bulk field value
@@ -29,7 +33,7 @@ const Λ = 0.5*λ
 const H = zeros(N,N)
 for i in 1:N
     for j in 1:N
-        H[i,j] = δ*sin(4*π*i/N)
+        H[i,j] = δ*sin(2*π*n*i/N)
     end
 end
 # deduced Fourier parameters
@@ -55,7 +59,8 @@ function noise()
     return f̂
 end
 
-function solver(cᵤ, cₗ, Nsteps, save_every=100)
+function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0)
+
     c_list = [[cᵤ, cₗ]]
     @showprogress for i in 1:Nsteps
         # Fourier transform
@@ -64,14 +69,22 @@ function solver(cᵤ, cₗ, Nsteps, save_every=100)
         # random noise
         f̂ᵤ, f̂ₗ = noise(), noise()
         # compute nonlinear term
-        ĉⁿ⁺¹ᵤ = A.*(ĉⁿᵤ .+ f̂ᵤ) .+ B.*fft(-cᵤ.+cᵤ.^3 .- Λ*(cₗ .- cᵤ) .+ H.*cᵤ)
-        ĉⁿ⁺¹ₗ = A.*(ĉⁿₗ .+ f̂ₗ) .+ B.*fft(-cₗ.+cₗ.^3 .- Λ*(cᵤ .- cₗ) .- H.*cₗ)
+        ĉⁿ⁺¹ᵤ = A.*(ĉⁿᵤ .+ f̂ᵤ) .+ B.*fft(-cᵤ.+cᵤ.^3 .- Λ*(cₗ .- cᵤ) .+ H)
+        ĉⁿ⁺¹ₗ = A.*(ĉⁿₗ .+ f̂ₗ) .+ B.*fft(-cₗ.+cₗ.^3 .- Λ*(cᵤ .- cₗ) .- H)
         # inverse Fourier transform
         cᵤ = real(ifft(ĉⁿ⁺¹ᵤ))
         cₗ = real(ifft(ĉⁿ⁺¹ₗ))
         # save
-        if i%save_every == 0
+        if (save_every != 0) && (i % save_every == 0)
             push!(c_list, [cᵤ, cₗ])
+        end
+        if (plot_every != 0) && (i % plot_every == 0)
+            # plot on p
+            heatmap1 = heatmap(cᵤ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1))
+            heatmap2 = heatmap(cₗ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1))
+            heatmap3 = heatmap(H, aspect_ratio=1, color=:jet, cbar=false, clim=(-δ-1.0e-8,δ+1.0e-8))
+            p = plot(heatmap1, heatmap2, heatmap3, layout=(1,3), size=(1500,500), ticks=nothing, border=:none, axis=nothing)
+            display(p)
         end
     end
     return c_list
@@ -103,5 +116,5 @@ cₗ[N÷2+1:end,:] .= -1.0
 cᵤ .+= c₀ - mean(cᵤ)
 cₗ .+= c₀ - mean(cₗ)
 # solve
-c_list = solver(cᵤ, cₗ, 500000, 500)
+c_list = solver(cᵤ, cₗ, 500000, save_every=0, plot_every=200)
 animate_time_evolution(c_list)
