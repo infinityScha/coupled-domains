@@ -2,6 +2,7 @@ using Statistics
 using Plots
 using ProgressMeter
 using FFTW
+using Printf
 
 # set GR plotting backend
 gr()
@@ -10,14 +11,14 @@ gr()
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
-const γ = 0.5 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
+const γ = 1.0 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
 const σ = 1.2 # interface width [nm]
 const λ = 0.03 # interleaflet coupling [kT/nm^2]
-const δ = 0.01 # sinusoidal perturbation amplitude kT/nm^2
+const δ = 0.0 # sinusoidal perturbation amplitude kT/nm^2
 const n = 1 # field periodicity
 const ζ = 0.025 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
-const c₀ = 0.0 # bulk field value
+const c₀ = 0.2 # bulk field value
 # numerical parameters
 const M = 6 # log(2, grid size)
 const L = 20.0 # box size [nm]
@@ -75,14 +76,16 @@ end
 function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0)
     c_list = [[cᵤ, cₗ]]
     coupling_list_save = [coupling_ratio(cᵤ, cₗ)]
-    coupling_list_plot = [coupling_ratio(cᵤ, cₗ)]
-    @showprogress for i in 1:Nsteps
+    coupling_list_plot = [coupling_list_save[end]]
+    pbar = Progress(Nsteps, desc=@sprintf("%.3f", coupling_list_save[end]))
+    for i in 1:Nsteps
         # Fourier transform
         ĉⁿᵤ = fft(cᵤ)
         ĉⁿₗ = fft(cₗ)
         # random noise
         f̂ᵤ, f̂ₗ = noise(), noise()
         # compute nonlinear term
+        # TODO: consider changing H to be curvature related
         ĉⁿ⁺¹ᵤ = A.*(ĉⁿᵤ .+ f̂ᵤ) .+ B.*fft(-cᵤ.+cᵤ.^3 .- Λ*(cₗ .- cᵤ) .+ H)
         ĉⁿ⁺¹ₗ = A.*(ĉⁿₗ .+ f̂ₗ) .+ B.*fft(-cₗ.+cₗ.^3 .- Λ*(cᵤ .- cₗ) .- H)
         # inverse Fourier transform
@@ -92,20 +95,23 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0)
         if (save_every != 0) && (i % save_every == 0)
             push!(coupling_list_save, coupling_ratio(cᵤ, cₗ))
             push!(c_list, [cᵤ, cₗ])
+            # set progressbar title to coupling ratio
+            pbar.desc = @sprintf("%.3f", coupling_list_save[end])
         end
         if (plot_every != 0) && (i % plot_every == 0)
             push!(coupling_list_plot, coupling_ratio(cᵤ, cₗ))
             p = plot_spectrum(cᵤ, cₗ, coupling_list_plot)
             display(p)
+            pbar.desc = @sprintf("%.3f", coupling_list_plot[end])
         end
+        next!(pbar)
     end
     return c_list, coupling_list_save
 end
 
 function animate_time_evolution(c_list, coupling_list)
-    anim = @animate for i in 1:length(c_list)
-        cᵤ, cₗ = c_list[i]
-        p = plot_spectrum(cᵤ, cₗ, coupling_list[1:i])
+    anim = @animate for i in eachindex(c_list)
+        p = plot_spectrum(c_list[i][1], c_list[i][2], coupling_list[1:i])
     end
     gif(anim, "CHSolver.gif", fps=10)
 end
@@ -130,5 +136,5 @@ cₗ[N÷2+1:end,:] .= -1.0
 cᵤ .+= c₀ - mean(cᵤ)
 cₗ .+= c₀ - mean(cₗ)
 # solve
-c_list, coupling_list = solver(cᵤ, cₗ, 500000, save_every=1000, plot_every=0)
+c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=1000, plot_every=0)
 animate_time_evolution(c_list, coupling_list)
