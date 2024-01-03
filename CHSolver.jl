@@ -10,10 +10,10 @@ gr()
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
-const γ = 1.0 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
-const σ = 0.8 # interface width [nm]
+const γ = 0.5 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
+const σ = 1.2 # interface width [nm]
 const λ = 0.03 # interleaflet coupling [kT/nm^2]
-const δ = 0.01 # sinusoidal perturbation amplitude kT/nm^2
+const δ = 0.01   # sinusoidal perturbation amplitude kT/nm^2
 const n = 1 # field periodicity
 const ζ = 0.05 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
@@ -21,14 +21,14 @@ const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M = 5 # log(2, grid size)
 const L = 10.0 # box size [nm]
-const Δt = 1.0e-2 # time step [ns]
+const Δt = 2.5e-2 # time step [ns]
 # deduced numerical parameters
 const N = 2^M # grid size
 # deduced physical parameters
-# TODO: fix in general + fix K, ϵ definition
+# TODO: fix in general + fix K, ϵ definition + validate with 1D
 const K = 3*γ/8/σ
 const ϵ = 8*K/σ*σ
-const Λ = 0.5*λ
+const Λ = 0.25*λ
 # external field matrix
 const H = zeros(N,N)
 for i in 1:N
@@ -52,6 +52,19 @@ const B = -m*ϵ*Δt*k²./temp
 const η = m*sqrt(ζ)
 println("K = ", K, " [kT/nm^2]", ", ϵ = ", ϵ, " [kT/nm^2]")
 
+function plot_spectrum(cᵤ, cₗ, coupling_list)
+    # plot on p
+    heatmap1 = heatmap(cᵤ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1), axis=nothing, border=:none, ticks=nothing, title = "Upper leaflet")
+    heatmap2 = heatmap(cₗ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1), axis=nothing, border=:none, ticks=nothing, title = "Lower leaflet")
+    coupling_plot = plot(coupling_list, xlims=(1, length(coupling_list)), ylims=(0,1.0), color=:black, legend=false, title="Coupling ratio")
+    p = plot(heatmap1, heatmap2, coupling_plot, layout=(1,3), size=(1500,500))
+    return p
+end
+
+function coupling_ratio(cᵤ, cₗ)
+    return 0.5.*mean(abs.(cᵤ .+ cₗ))
+end
+
 function noise()
     f̂ = η*randn(N, N)
     f̂ .-= mean(f̂)
@@ -60,8 +73,9 @@ function noise()
 end
 
 function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0)
-
     c_list = [[cᵤ, cₗ]]
+    coupling_list_save = [coupling_ratio(cᵤ, cₗ)]
+    coupling_list_plot = [coupling_ratio(cᵤ, cₗ)]
     @showprogress for i in 1:Nsteps
         # Fourier transform
         ĉⁿᵤ = fft(cᵤ)
@@ -76,27 +90,22 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0)
         cₗ = real(ifft(ĉⁿ⁺¹ₗ))
         # save
         if (save_every != 0) && (i % save_every == 0)
+            push!(coupling_list_save, coupling_ratio(cᵤ, cₗ))
             push!(c_list, [cᵤ, cₗ])
         end
         if (plot_every != 0) && (i % plot_every == 0)
-            # plot on p
-            heatmap1 = heatmap(cᵤ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1))
-            heatmap2 = heatmap(cₗ, aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1))
-            heatmap3 = heatmap(H, aspect_ratio=1, color=:jet, cbar=false, clim=(-δ-1.0e-8,δ+1.0e-8))
-            p = plot(heatmap1, heatmap2, heatmap3, layout=(1,3), size=(1500,500), ticks=nothing, border=:none, axis=nothing)
+            push!(coupling_list_plot, coupling_ratio(cᵤ, cₗ))
+            p = plot_spectrum(cᵤ, cₗ, coupling_list_plot)
             display(p)
         end
     end
-    return c_list
+    return c_list, coupling_list_save
 end
 
-function animate_time_evolution(c_list)
+function animate_time_evolution(c_list, coupling_list)
     anim = @animate for i in 1:length(c_list)
-        # plot heatmaps for both leaflets and external field
-        plot(heatmap(c_list[i][1], aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1)), 
-            heatmap(c_list[i][2], aspect_ratio=1, color=:jet, cbar=false, clim=(-1,1)), 
-            heatmap(H, aspect_ratio=1, color=:jet, cbar=false, clim=(-δ-1.0e-8,δ+1.0e-8)),
-            layout=(1,3), size=(1500,500), ticks=nothing, border=:none, axis=nothing)
+        cᵤ, cₗ = c_list[i]
+        p = plot_spectrum(cᵤ, cₗ, coupling_list[1:i])
     end
     gif(anim, "CHSolver.gif", fps=10)
 end
@@ -116,5 +125,5 @@ cₗ[N÷2+1:end,:] .= -1.0
 cᵤ .+= c₀ - mean(cᵤ)
 cₗ .+= c₀ - mean(cₗ)
 # solve
-c_list = solver(cᵤ, cₗ, 500000, save_every=0, plot_every=200)
-animate_time_evolution(c_list)
+c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=500, plot_every=0)
+animate_time_evolution(c_list, coupling_list)
