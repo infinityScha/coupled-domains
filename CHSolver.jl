@@ -13,14 +13,14 @@ gr()
 const γ = 0.5 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
 const σ = 1.2 # interface width [nm]
 const λ = 0.03 # interleaflet coupling [kT/nm^2]
-const δ = 0.01   # sinusoidal perturbation amplitude kT/nm^2
+const δ = 0.01 # sinusoidal perturbation amplitude kT/nm^2
 const n = 1 # field periodicity
-const ζ = 0.05 # Cook noise [kT/ns]
+const ζ = 0.025 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
-const M = 5 # log(2, grid size)
-const L = 10.0 # box size [nm]
+const M = 6 # log(2, grid size)
+const L = 20.0 # box size [nm]
 const Δt = 2.5e-2 # time step [ns]
 # deduced numerical parameters
 const N = 2^M # grid size
@@ -110,6 +110,11 @@ function animate_time_evolution(c_list, coupling_list)
     gif(anim, "CHSolver.gif", fps=10)
 end
 
+function plot_coupling_list(coupling_list)
+    plot(coupling_list, xlims=(1, length(coupling_list)), ylims=(0,1.0), color=:black, legend=false, title="Coupling ratio")
+    savefig("coupling_list.png")
+end
+
 
 # make initial uniform grid + random uniform noise
 #cᵤ = 2.0*rand(N,N) .- 1.0
@@ -125,5 +130,5 @@ cₗ[N÷2+1:end,:] .= -1.0
 cᵤ .+= c₀ - mean(cᵤ)
 cₗ .+= c₀ - mean(cₗ)
 # solve
-c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=500, plot_every=0)
+c_list, coupling_list = solver(cᵤ, cₗ, 500000, save_every=1000, plot_every=0)
 animate_time_evolution(c_list, coupling_list)
