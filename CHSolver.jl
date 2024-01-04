@@ -12,15 +12,15 @@ gr()
 
 # physical parameters
 const γ = 1.0 # line tension [kT/nm] = K*4/(3*sqrt(2K/ϵ)) = 8*K/3*σ -> K = 3*γ/8/σ 
-const σ = 1.2 # interface width [nm]
+const σ = 2.0 # interface width [nm]
 const λ = 0.03 # interleaflet coupling [kT/nm^2]
-const δ = 0.0 # sinusoidal perturbation amplitude kT/nm^2
+const δ = 0.02 # sinusoidal perturbation amplitude kT/nm^2
 const n = 1 # field periodicity
-const ζ = 0.025 # Cook noise [kT/ns]
+const ζ = 0.025/10.0 # Cook noise [kT/ns]
 const m = 1.0 # mobility [nm^2/ns/kT]
-const c₀ = 0.2 # bulk field value
+const c₀ = 0.0 # bulk field value
 # numerical parameters
-const M = 6 # log(2, grid size)
+const M = 5 # log(2, grid size)
 const L = 20.0 # box size [nm]
 const Δt = 2.5e-2 # time step [ns]
 # deduced numerical parameters
@@ -28,7 +28,7 @@ const N = 2^M # grid size
 # deduced physical parameters
 # TODO: fix in general + fix K, ϵ definition + validate with 1D
 const K = 3*γ/8/σ
-const ϵ = 8*K/σ*σ
+const ϵ = 8*K/σ^2
 const Λ = 0.25*λ
 # external field matrix
 const H = zeros(N,N)
@@ -136,5 +136,5 @@ cₗ[N÷2+1:end,:] .= -1.0
 cᵤ .+= c₀ - mean(cᵤ)
 cₗ .+= c₀ - mean(cₗ)
 # solve
-c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=1000, plot_every=0)
+c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=0, plot_every=250)
 animate_time_evolution(c_list, coupling_list)
