@@ -4,3 +4,9 @@ check.py
 d=0.01.gif
 d=0.gif
 c=0.2 d=0.01.gif
+cwt/*
+init.jld2
+final_large.jld2
+cwt.jld2
+cwt_list.jld2
+cwt.png
