@@ -20,11 +20,12 @@ const I = 0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2/3*s
 const γ = 3.0 # line tension [kT/nm] = I√(K⋅ϵ)
 const σ = 1.0 # interface width [nm] = √(K/ϵ)
 const ζ = 5.6e-1 # Cook noise [kT/ns]
-const mc_step_size = 3.0e-1 # monte carlo step size
+const max_noise_wavelength = 0.8 # [nm⁻¹]
+const mc_step_size = 10.0 # monte carlo step size
 const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M = 5 # log(2, grid size)
-const L = 20.0 # box size [nm]
+const L = max_noise_wavelength * (2^5) # box size [nm]
 const Δt = 1.0e-4 # time step [ns]
 # deduced numerical & physical parameters
 const N = 2^M # grid size
@@ -47,10 +48,6 @@ for i in 1:N
     end
 end
 k⁴ = k².^2
-
-# same for 1D line 
-kₗ = (2.0*π/L)*cat(1:N/2-1, dims=1)
-kₗ² = kₗ.^2
 
 # deduced semi-implicit parameters
 temp = 1.0 .+ K*Δt*k⁴
@@ -118,7 +115,7 @@ function noise()
     f̂ = fft(divergence(f₁, f₂)*η)
     f̂[1,1] = 0.0
     # keep only fluctuations with k > 1 nm -1
-    f̂[k² .> (4.0*π*π)] .= 0.0
+    f̂[k² .> (1.001*4.0*π*π*max_noise_wavelength*max_noise_wavelength)] .= 0.0
     return f̂
 end
 
@@ -187,12 +184,12 @@ function solver_mc(c, Nsteps, ;save_every=100, plot_every=0)
             ĉⁿ = fft(curr_c)
             # need to change both real and imaginary part
             mode₁, mode₂ = 1, 1
-            while mode₁ == 1 && mode₂ == 1
+            while (mode₁ == 1 && mode₂ == 1)
                 mode₁ = rand(1:Int(N/2))
                 mode₂ = rand(1:Int(N/2))
             end
-            mode₁_conj = (N - mode₁) % (N - 1) + 1
-            mode₂_conj = (N - mode₂) % (N - 1) + 1
+            mode₁_conj = mod1(N - mode₁ + 2, N)
+            mode₂_conj = mod1(N - mode₂ + 2, N)
             step_size_real = mc_step_size*randn()
             step_size_imag = mc_step_size*randn()
             ĉⁿ[mode₁, mode₂] = ĉⁿ[mode₁, mode₂] + step_size_real + step_size_imag*im
@@ -279,19 +276,19 @@ c = make_grid(c₀)
 #c = load_state("cwt.jld2")
 
 # relaxation
-c_list = solver_noise(c, 1000, save_every=100, plot_every=1000, noisy=false)
+c_list = solver_noise(c, 10000, save_every=100, plot_every=1000, noisy=false)
 c = c_list[end]
 # check if energy makes sense
 println("Energy = ", energy(c), " expected = ", 2*γ*L)
 # run MC
-c_list_mc = solver_mc(c, 1000, save_every=1, plot_every=1)
+c_list_mc = solver_mc(c, 1000, save_every=1, plot_every=10)
 # plot energy kernel density
 p = plot_energy_kernel_density(c_list_mc[200:end], "MC")
 # run noise
-c_list_noise = solver_noise(c_list[end], round(Int, 10.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
+c_list_noise = solver_noise(c_list[end], round(Int, 20.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
 #c_list_noise = solver_noise(c, round(Int, 10.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
 # plot energy kernel density
-p = plot_energy_kernel_density(c_list_noise[100:end], "Noise", p=p)
+p = plot_energy_kernel_density(c_list_noise[1000:end], "Noise", p=p)
 #p = plot_energy_kernel_density(c_list_noise[10:end], "Noise")
 # save figure
 savefig("energy_kernel_density.png")
