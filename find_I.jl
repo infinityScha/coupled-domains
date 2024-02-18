@@ -31,10 +31,10 @@ const B = -ϵ*Δt*k²./temp
 
 # chemical potential function (DEFINE HERE!)
 function μ(c)
-    #c³ = c.^3
-    #return 0.25*8.0.*c³.*(c³.*c .- 1.0)
-    c⁵ = c.^5
-    return 0.25*12.0.*c⁵.*(c⁵.*c .- 1.0)
+    c³ = c.^3
+    return 0.25*8.0.*c³.*(c³.*c .- 1.0)
+    #c⁵ = c.^5
+    #return 0.25*12.0.*c⁵.*(c⁵.*c .- 1.0)
     #c⁷ = c.^7
     #return 0.25*16.0.*c⁷.*(c⁷.*c .- 1.0)
     #c¹¹ = c.^11

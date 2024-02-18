@@ -16,16 +16,16 @@ gr()
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
-const I = 0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2/3*sqrt(2)
+const I = 2/3*sqrt(2) #0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2/3*sqrt(2)
 const γ = 3.0 # line tension [kT/nm] = I√(K⋅ϵ)
-const σ = 1.0 # interface width [nm] = √(K/ϵ)
-const ζ = 5.6e-1 # Cook noise [kT/ns]
-const max_noise_wavelength = 0.8 # [nm⁻¹]
-const mc_step_size = 10.0 # monte carlo step size
-const c₀ = 0.0 # bulk field value
+const σ = 0.3 # interface width [nm] = √(K/ϵ)
+const ζ = 1.0 # Cook noise [kT/ns]
+const max_noise_wavelength = 4.0 # [nm]
+const Δx_mc = 2.0e-2 # monte carlo step size
+const c₀ = 1.0 # bulk field value
 # numerical parameters
 const M = 5 # log(2, grid size)
-const L = max_noise_wavelength * (2^5) # box size [nm]
+const L = 20.0 #max_noise_wavelength * (2^M) # box size [nm]
 const Δt = 1.0e-4 # time step [ns]
 # deduced numerical & physical parameters
 const N = 2^M # grid size
@@ -114,8 +114,8 @@ function noise()
     # compute divergence of random vector field
     f̂ = fft(divergence(f₁, f₂)*η)
     f̂[1,1] = 0.0
-    # keep only fluctuations with k > 1 nm -1
-    f̂[k² .> (1.001*4.0*π*π*max_noise_wavelength*max_noise_wavelength)] .= 0.0
+    # keep only fluctuations with k > max_noise_wavelength^-1 
+    f̂[k² .> (1.001*4.0*π*π/max_noise_wavelength/max_noise_wavelength)] .= 0.0
     return f̂
 end
 
@@ -129,8 +129,8 @@ function solver_noise(c, Nsteps, ;save_every=100, plot_every=0, noisy=true)
         f̂ = noisy ? noise() : zeros(N, N)
         # compute nonlinear term
         c⁵ = c.^5
-        ĉⁿ⁺¹ = A.*ĉⁿ .+ B.*fft(3.0.*c⁵.*(c⁵.*c .- 1.0)) + C.*f̂
-        #ĉⁿ⁺¹ = A.*(ĉⁿ .+ f̂) .+ B.*fft(-c .+ c.^3) 
+        #ĉⁿ⁺¹ = A.*ĉⁿ .+ B.*fft(3.0.*c⁵.*(c⁵.*c .- 1.0)) + C.*f̂
+        ĉⁿ⁺¹ = A.*(ĉⁿ .+ Δt.*f̂) .+ B.*fft(-c .+ c.^3) 
         # inverse Fourier transform
         c = real(ifft(ĉⁿ⁺¹))
         # save
@@ -160,7 +160,8 @@ end
 
 function energy(c)
     # compute energy over LxL box
-    c⁶ = c.^6
+    #c⁶ = c.^6
+    c⁶ = c.*c
     diff_c₁, diff_c₂ = diff(c)
     return (ϵ*0.25*sum((c⁶ .- 1.0).^2) + 0.5*K*sum(diff_c₁.^2 + diff_c₂.^2))*(L/N)^2
 end
@@ -173,41 +174,23 @@ function solver_mc(c, Nsteps, ;save_every=100, plot_every=0)
     prev_en = curr_en
     accepted = 0
     total_steps = 0
-    accepted_matrix = zeros(Int(N/2), Int(N/2))
-    total_matrix = zeros(Int(N/2), Int(N/2))
-    total_matrix[1,1] = 1
     pbar = Progress(Nsteps)
     for i in 1:Nsteps
-        for j in 1:round(Int(N*N/4)-1)
-            prev_c = copy(curr_c)
-            prev_en = curr_en
-            ĉⁿ = fft(curr_c)
-            # need to change both real and imaginary part
-            mode₁, mode₂ = 1, 1
-            while (mode₁ == 1 && mode₂ == 1)
-                mode₁ = rand(1:Int(N/2))
-                mode₂ = rand(1:Int(N/2))
-            end
-            mode₁_conj = mod1(N - mode₁ + 2, N)
-            mode₂_conj = mod1(N - mode₂ + 2, N)
-            step_size_real = mc_step_size*randn()
-            step_size_imag = mc_step_size*randn()
-            ĉⁿ[mode₁, mode₂] = ĉⁿ[mode₁, mode₂] + step_size_real + step_size_imag*im
-            ĉⁿ[mode₁_conj, mode₂_conj] = ĉⁿ[mode₁_conj, mode₂_conj] + step_size_real - step_size_imag*im
-            curr_c = real(ifft(ĉⁿ))
-            # compute energy difference
-            curr_en = energy(curr_c)
-            ΔE = curr_en - prev_en
-            if ΔE > 0.0 && exp(-ΔE) < rand()
-                curr_c = prev_c
-                curr_en = prev_en
-            else
-                accepted += 1
-                accepted_matrix[mode₁, mode₂] += 1
-            end
-            total_steps += 1
-            total_matrix[mode₁, mode₂] += 1
+        prev_c = copy(curr_c)
+        prev_en = curr_en
+        ĉⁿ = fft(curr_c)
+        # random noise
+        curr_c = real(ifft(ĉⁿ + noise()./η.*Δx_mc))
+        # compute energy difference
+        curr_en = energy(curr_c)
+        ΔE = curr_en - prev_en
+        if ΔE > 0.0 && exp(-ΔE) < rand()
+            curr_c = prev_c
+            curr_en = prev_en
+        else
+            accepted += 1
         end
+        total_steps += 1
         # save
         if (save_every != 0) && (i % save_every == 0)
             push!(c_list, curr_c)
@@ -215,8 +198,6 @@ function solver_mc(c, Nsteps, ;save_every=100, plot_every=0)
             pbar.desc = @sprintf("%.3f", accepted/total_steps)
         end
         if (plot_every != 0) && (i % plot_every == 0)
-            p = heatmap(accepted_matrix./total_matrix, aspect_ratio=1, color=:jet, cbar=true, clim=(0,1), axis=nothing, border=:none, ticks=nothing)
-            savefig("mc_acc_rate.png")
             p = plot_spectrum(curr_c)
             savefig("curr.png")
             p = plot_energy_evolution(c_list, "MC")
@@ -272,23 +253,25 @@ function make_grid(c₀)
 end
 
 # make initial uniform grid
-c = make_grid(c₀)
+#c = make_grid(c₀)
+#c = zeros(N,N)
+c = ones(N,N)
 #c = load_state("cwt.jld2")
 
 # relaxation
-c_list = solver_noise(c, 10000, save_every=100, plot_every=1000, noisy=false)
-c = c_list[end]
+#c_list = solver_noise(c, 100000, save_every=1000, plot_every=1000, noisy=false)
+#c = c_list[end]
 # check if energy makes sense
 println("Energy = ", energy(c), " expected = ", 2*γ*L)
-# run MC
-c_list_mc = solver_mc(c, 1000, save_every=1, plot_every=10)
-# plot energy kernel density
-p = plot_energy_kernel_density(c_list_mc[200:end], "MC")
 # run noise
-c_list_noise = solver_noise(c_list[end], round(Int, 20.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
+c_list_noise = solver_noise(c, round(Int, 10.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
 #c_list_noise = solver_noise(c, round(Int, 10.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
 # plot energy kernel density
-p = plot_energy_kernel_density(c_list_noise[1000:end], "Noise", p=p)
+p = plot_energy_kernel_density(c_list_noise[50:end], "Noise")
+# run MC
+c_list_mc = solver_mc(c_list_noise[end-1], 100000, save_every=100, plot_every=5000)
+# plot energy kernel density
+p = plot_energy_kernel_density(c_list_mc[20:end], "MC", p=p)
 #p = plot_energy_kernel_density(c_list_noise[10:end], "Noise")
 # save figure
 savefig("energy_kernel_density.png")
