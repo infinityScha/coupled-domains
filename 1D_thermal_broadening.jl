@@ -30,7 +30,6 @@ const N = 2^M # grid size
 const K = γ*σ/I
 const ϵ = K/σ^2
 
-
 # deduced Fourier parameters
 k = (2.0*π/L)*cat(0:N/2-1, -N/2:-1, dims=1)
 k² = k.^2
@@ -74,7 +73,7 @@ function make_grid()
     # set left as -1.0
     i = round(Int, 0.5*N)
     c[1:i] .= -1.0
-    # set the rest to 1.0
+    # set the rest to 1.01
     c[i+1:end] .= 1.0
     # shift by N/4
     c = circshift(c, round(Int, 0.25*N))
