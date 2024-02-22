@@ -19,24 +19,24 @@ ENV["GKSwstype"] = "100"
 
 # physical parameters
 const I = 2/3*sqrt(2) #0.85714*sqrt(2) #0.8*sqrt(2) #0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
-const γ = 4.0 # line tension [kT/nm] = I√(K⋅ϵ)
-const σ = 0.5 # interface width [nm] = √(K/ϵ)
+const γ = 1.0 # line tension [kT/nm] = I√(K⋅ϵ)
+const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
-const λ = 0.5 #0.16 #0.33 # interleaflet coupling [kT/nm²]
-const dλdt = -0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
-const max_noise_wavelength = 1.2 # [nm]
+const λ = 0.5 # interleaflet coupling [kT/nm²]
+const γₗ = 0.0 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
+const dλdt = 0.000#1 # rate of change of interleaflet coupling [kT/nm²/ns]
+const max_noise_wavelength = 2.5 # [nm]
 const Kᴸᵒ = 22.9 # bending modulus of Lo phase [kT]
 const Kᴸᵈ = 8.9 # bending modulus of Ld phase [kT]
 const R = 10.0 # radius of curvature at the maximum [nm] 
 const Jₛᴸᵒ = -0.178 # spontaneous curvature of Lo phase [nm^-1]
 const Jₛᴸᵈ = 0.114 # spontaneous curvature of Ld phase [nm^-1]
-const m = 1.0 # mobility [nm^2/ns/kT]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M₁ = 6 # log(2, grid size)
 const M₂ = 5 # log(2, grid size)
 const L₁ = 20.0 # box size [nm]
-const Δt = 5.0e-4 # time step [ns]
+const Δt = 1.0e-2 # time step [ns]
 # deduced numerical & physical parameters
 const N₁ = 2^M₁ # grid size
 const N₂ = 2^M₂ # grid size
@@ -88,7 +88,7 @@ for i in 1:N₁
     end
 end
 # deduced semi-implicit parameters
-temp = 1.0 .+ K*Δt*k⁴
+temp = 1.0 .+ K*Δt*k⁴ 
 const A = 1.0./temp
 const B = -ϵ*Δt*k²./temp
 const C = -Δt./temp
@@ -189,7 +189,8 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
     fit_list_save = [domain_fit(cᵤ, cₗ)]
     fit_list_plot = [fit_list_save[end]]
     # only make progress bar if verbose
-    pbar = verbose ? Progress(Nsteps) : nothing
+    pbar = verbose ? Progress(Nsteps, barglyphs=BarGlyphs('|','█', ['▁' ,'▂' ,'▃' ,'▄' ,'▅' ,'▆', '▇'],' ','|',),
+    barlen=10) : nothing
     for i in 1:Nsteps
         # Fourier transform
         ĉⁿᵤ = fft(cᵤ)
@@ -202,8 +203,10 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
         # compute nonlinear term
         #ĉⁿ⁺¹ᵤ = A.*ĉⁿᵤ .+ B.*fft(3.0.*cᵤ⁵.*(cᵤ⁵.*cᵤ .- 1.0) - 0.25*λ_.*(cₗ .- cᵤ) .+ H₁) + C.*f̂ᵤ   
         #ĉⁿ⁺¹ₗ = A.*ĉⁿₗ .+ B.*fft(3.0.*cₗ⁵.*(cₗ⁵.*cₗ .- 1.0) - 0.25*λ_.*(cᵤ .- cₗ) .+ H₂) + C.*f̂ₗ
-        ĉⁿ⁺¹ᵤ = A.*ĉⁿᵤ .+ B.*fft(cᵤ.^3 - cᵤ .- 0.25*λ_.*(cₗ .- cᵤ) .+ H₁) + C.*f̂ᵤ
-        ĉⁿ⁺¹ₗ = A.*ĉⁿₗ .+ B.*fft(cₗ.^3 - cₗ .- 0.25*λ_.*(cᵤ .- cₗ) .+ H₂) + C.*f̂ₗ
+        d2cᵤ = real(ifft(-k².*ĉⁿᵤ))
+        d2cₗ = real(ifft(-k².*ĉⁿₗ))
+        ĉⁿ⁺¹ᵤ = A.*ĉⁿᵤ .+ B.*fft(cᵤ.^3 - cᵤ .- 0.25*λ_.*(cₗ .- cᵤ) .- 0.5*γₗ.*d2cₗ .+ H₁) + C.*f̂ᵤ
+        ĉⁿ⁺¹ₗ = A.*ĉⁿₗ .+ B.*fft(cₗ.^3 - cₗ .- 0.25*λ_.*(cᵤ .- cₗ) .- 0.5*γₗ.*d2cᵤ .+ H₂) + C.*f̂ₗ
         #cᵤ³ = cᵤ.^3
         #cₗ³ = cₗ.^3
         #ĉⁿ⁺¹ᵤ = A.*ĉⁿᵤ .+ B.*fft(2.0*cᵤ³.*(cᵤ³.*cᵤ .- 1.0) - 0.25*λ_.*(cₗ .- cᵤ) .+ H₁) + C.*f̂ᵤ
@@ -218,7 +221,7 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
             push!(c_list, [cᵤ, cₗ])
             # set progressbar title to coupling ratio
             if verbose
-                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_plot[end], λ_, maximum(cᵤ), minimum(cᵤ))
+                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_save[end], λ_, maximum(cᵤ), minimum(cᵤ))
             end
         end
         if (plot_every != 0) && (i % plot_every == 0)
@@ -228,7 +231,7 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
             savefig("curr.png")
             plot_c_distribution(cᵤ, cₗ)
             if verbose
-                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_save[end], λ_, maximum(cᵤ), minimum(cᵤ))
+                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_plot[end], λ_, maximum(cᵤ), minimum(cᵤ))
             end
         end
         if verbose
@@ -262,6 +265,7 @@ function diff(v)
 end
 
 function energy(cᵤ, cₗ)
+    #TODO: include γₗ
     # compute energy
     #cᵤ⁶ = cᵤ.^6 
     #cₗ⁶ = cₗ.^6
@@ -342,19 +346,19 @@ function en_profile_1d()
     savefig("en_profile_1d.png")
 end
 
-en_profile_1d()
+#en_profile_1d()
 
 # make initial uniform grid
 #cᵤ = make_grid(c₀, to_mid = true)
 #cₗ = make_grid(c₀, to_mid = true)
 #cᵤ, cₗ = load_state("final_large2.jld2")
-cᵤ = zeros(N₁,N₂)
-cₗ = zeros(N₁,N₂)
+cᵤ = zeros(N₁,N₂) .+ c₀
+cₗ = zeros(N₁,N₂) .+ c₀
 
 # solve
 #c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=0, plot_every=25)
 #c_list, coupling_list = solver(cᵤ, cₗ, round(Int, 250/Δt), save_every=round(Int, 0.5/Δt), plot_every=round(Int, 0.5/Δt))
-c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 25000/Δt), save_every=round(Int, 100/Δt), plot_every=round(Int, 0.1/Δt))
+c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 25000/Δt), save_every=round(Int, 100/Δt), plot_every=round(Int, 10/Δt))
 #c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=10000, plot_every=0)
 save_state(c_list[end][1], c_list[end][2], "final_large3.jld2")
 animate_time_evolution(c_list, coupling_list, fit_list, "large3.gif", step=100.0)
