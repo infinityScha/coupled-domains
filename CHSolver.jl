@@ -19,18 +19,18 @@ ENV["GKSwstype"] = "100"
 
 # physical parameters
 const I = 2/3*sqrt(2) #0.85714*sqrt(2) #0.8*sqrt(2) #0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
-const γ = 1.0 # line tension [kT/nm] = I√(K⋅ϵ)
+const γ = 3.0 # line tension [kT/nm] = I√(K⋅ϵ)
 const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
-const λ = 0.5 # interleaflet coupling [kT/nm²]
-const γₗ = 0.0 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
-const dλdt = 0.000#1 # rate of change of interleaflet coupling [kT/nm²/ns]
+const λ = 0.25 # interleaflet coupling [kT/nm²]
+const γₗ = 0.25 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
+const dλdt = 0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
 const max_noise_wavelength = 2.5 # [nm]
 const Kᴸᵒ = 22.9 # bending modulus of Lo phase [kT]
 const Kᴸᵈ = 8.9 # bending modulus of Ld phase [kT]
-const R = 10.0 # radius of curvature at the maximum [nm] 
-const Jₛᴸᵒ = -0.178 # spontaneous curvature of Lo phase [nm^-1]
-const Jₛᴸᵈ = 0.114 # spontaneous curvature of Ld phase [nm^-1]
+const R = 20.0 # radius of curvature at the maximum [nm] 
+const Jₛᴸᵒ = -0.282 # spontaneous curvature of Lo phase [nm^-1]
+const Jₛᴸᵈ = -0.305 # spontaneous curvature of Ld phase [nm^-1]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M₁ = 6 # log(2, grid size)
@@ -51,11 +51,11 @@ const H₂ˡᵒ = zeros(N₁,N₂)
 const H₂ˡᵈ = zeros(N₁,N₂)
 # approximate curvature matrix
 function Hij(i, R, is_lo=true)
-    c = 0.5*sin(2*π*i/N₁)/R
+    c = -sin(2*π*i/N₁)/R
     if is_lo
-        return 0.5*Kᴸᵒ*(c + Jₛᴸᵒ)^2 # at Φ = 1
+        return 0.5*Kᴸᵒ*(c - Jₛᴸᵒ)^2 # at Φ = 1
     end
-    return 0.5*Kᴸᵈ*(c + Jₛᴸᵈ)^2 # at Φ = -1
+    return 0.5*Kᴸᵈ*(c - Jₛᴸᵈ)^2 # at Φ = -1
 end
 
 for i in 1:N₁
@@ -127,14 +127,14 @@ function plot_c_distribution(cᵤ, cₗ)
     p = plot(p1, p2, layout=(1,2), size=(1000,500))
     savefig("curr_c_distribution.png")
     # print the 90% left and right tails threshold
-    cs_k1 = cumsum(k1.density)*(k1.x[2]-k1.x[1])
-    cs_k2 = cumsum(k2.density)*(k2.x[2]-k2.x[1])
-    left_90_k1 = k1.x[findfirst(x->x>0.05, cs_k1)]
-    right_90_k1 = k1.x[findfirst(x->x>0.95, cs_k1)]
-    left_90_k2 = k2.x[findfirst(x->x>0.05, cs_k2)]
-    right_90_k2 = k2.x[findfirst(x->x>0.95, cs_k2)]
-    println("left_90_k1 = ", left_90_k1, ", right_90_k1 = ", right_90_k1)
-    println("left_90_k2 = ", left_90_k2, ", right_90_k2 = ", right_90_k2)
+    #cs_k1 = cumsum(k1.density)*(k1.x[2]-k1.x[1])
+    #cs_k2 = cumsum(k2.density)*(k2.x[2]-k2.x[1])
+    #left_90_k1 = k1.x[findfirst(x->x>0.05, cs_k1)]
+    #right_90_k1 = k1.x[findfirst(x->x>0.95, cs_k1)]
+    #left_90_k2 = k2.x[findfirst(x->x>0.05, cs_k2)]
+    #right_90_k2 = k2.x[findfirst(x->x>0.95, cs_k2)]
+    #println("left_90_k1 = ", left_90_k1, ", right_90_k1 = ", right_90_k1)
+    #println("left_90_k2 = ", left_90_k2, ", right_90_k2 = ", right_90_k2)
 end
 
 function coupling_ratio(cᵤ, cₗ)

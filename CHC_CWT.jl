@@ -22,8 +22,7 @@ const ζ = 1.0e-2 # Cook noise [kT/ns]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M = 6 # log(2, grid size)
-const L = 10.0 # box size [nm]
-const Δt = 1.0e-3 # time step [ns]
+const L = 10.0 # box size [nm] const Δt = 1.0e-3 # time step [ns]
 # deduced numerical & physical parameters
 const N = 2^M # grid size
 const K = γ*σ/I
