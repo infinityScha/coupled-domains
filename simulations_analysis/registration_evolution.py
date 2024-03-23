@@ -8,6 +8,9 @@ from utils import periodic_griddata as pg
 from tqdm import tqdm
 from freud.density import GaussianDensity
 from freud.cluster import Cluster
+from sklearn.cluster import DBSCAN
+from scipy.spatial import cKDTree
+
 
 # remove warnings
 import warnings
@@ -21,12 +24,21 @@ sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/
 I_MIN = 23
 I_MAX = 39
 
+EPS_LO = 14
+MIN_SAMPLES_LO = 5
+EPS_LD = 14
+MIN_SAMPLES_LD = 4
+
+START = 24500
+SKIP = 10
+
 lo_arr = []
 comp_arr_lo = []
 comp_arr_ld = []
 
 # define default colors for the plots to have gradual color
 colors = plt.cm.viridis(np.linspace(0, 1, np.abs(I_MAX-I_MIN)+1))
+
 
 total_A_arr = []
 
@@ -77,8 +89,9 @@ for i in range(I_MIN, I_MAX+1):
 
     def flatten(pos, arc_length_f):
         # flatten the sines to the arc length
-        x_flat = np.vectorize(arc_length_f)(pos[:, 0])
-        pos[:, 0] = x_flat
+        x_flat = np.vectorize(arc_length_f)(pos[:, 0]  % u.dimensions[0])
+        pos[:, 0] = x_flat 
+        pos[:, 1] %= u.dimensions[1]
         pos[:, 2] = 0.0
         return pos
 
@@ -120,45 +133,46 @@ for i in range(I_MIN, I_MAX+1):
         # fit the data
         popt, _ = curve_fit(sine, x, z)
         # plot for visual inspection
-        fig, ax = plt.subplots()
-        ax.plot(x, z, "o", label="Data")
-        ax.scatter(x, sine(x, *popt), label="Fit", color="red")
-        ax.set_xlabel("x [A]")
-        ax.set_ylabel("z [A]")
-        ax.legend()
-        plt.savefig("simulations_analysis/plots/fit_{}.png".format(which))
-        plt.close(fig)
+        #fig, ax = plt.subplots()
+        #ax.plot(x, z, "o", label="Data")
+        #ax.scatter(x, sine(x, *popt), label="Fit", color="red")
+        #ax.set_xlabel("x [A]")
+        #ax.set_ylabel("z [A]")
+        #ax.legend()
+        #plt.savefig("simulations_analysis/plots/fit_{}.png".format(which))
+        #plt.close(fig)
         # arc length function over the sines
         def sine_arc_length(x):
             return arc_length(sine, x, popt)
         return resnames, pos, sine_arc_length, popt[0]
+
+    def _clus_helper(pos_relevant, period, eps, min_samples):
+        kdt = cKDTree(pos_relevant[:, :2], boxsize=np.array([period, u.dimensions[1]])+0.001)
+        dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
+        X = kdt.sparse_distance_matrix(kdt, eps)
+        dbscan.fit(X)
+        return dbscan.labels_
 
     def dbscan_clus_(resnames, pos, period):
         is_dupc = np.array([resname == "DUPC" for resname in resnames])
         not_dupc = np.invert(is_dupc)
         is_dapc = np.array([resname == which for resname in resnames])
         is_chol = np.array([resname == "CHOL" for resname in resnames])
-        box = (period, u.dimensions[1])
-        rounded_box = (round(period), round(u.dimensions[1]))
-        gd = GaussianDensity(width=rounded_box, r_max=36.0, sigma = 8.0)
-        # get DUPC density
-        gd.compute(system=(box, pos[is_dupc] - np.array([period/2, u.dimensions[1]/2, 0])))
-        dupc_density = gd.density.copy().reshape(rounded_box)
-        # get DAPC density
-        gd.compute(system=(box, pos[not_dupc] - np.array([period/2, u.dimensions[1]/2, 0])))
-        rest_density = gd.density.copy().reshape(rounded_box)
-        # normalize the densities
-        tot_density = dupc_density + rest_density
-        dupc_density /= tot_density
-        rest_density /= tot_density
-        # get the mean density of each head
-        z_grid = dupc_density < 0.4
-        xx = np.linspace(0, period, rounded_box[0])
-        yy = np.linspace(0, u.dimensions[1], rounded_box[1])
+        labels_lo = _clus_helper(pos[not_dupc], period, EPS_LO, MIN_SAMPLES_LO)
+        labels_lo[labels_lo > -1] = 1
+        labels_lo[labels_lo == -1] = 0
+        labels_ld = _clus_helper(pos[np.invert(not_dupc)], period, EPS_LD, MIN_SAMPLES_LD)
+        labels_ld[labels_ld != -1] = -2
+        labels_ld[labels_ld == -1] = 1
+        labels_ld[labels_ld == -2] = 0
+        which_domain = np.zeros(len(pos), dtype=int)-1
+        which_domain[not_dupc] = labels_lo
+        which_domain[is_dupc] = labels_ld
+        xx = np.linspace(0, period, int(np.ceil(period)))
+        yy = np.linspace(0, u.dimensions[1], int(np.ceil(u.dimensions[1])))
         x_grid, y_grid = np.meshgrid(xx, yy)
-        pos_int = pos[:, :2].astype(int)
-        pos_int %= rounded_box
-        in_lo = z_grid[pos_int[:, 0], pos_int[:, 1]]
+        z_grid = pg.periodic_griddata(pos[:, :2], which_domain, (x_grid, y_grid), method="nearest", period=[period, u.dimensions[1]])
+        in_lo = which_domain == 1
         lo_arr.append(z_grid.mean())
         dapc_lo = is_dapc[in_lo].mean()
         dupc_lo = is_dupc[in_lo].mean()
@@ -177,7 +191,7 @@ for i in range(I_MIN, I_MAX+1):
             which_domain2[is_chol] = 2
             z_grid2 = pg.periodic_griddata(pos[:, :2], which_domain2, (x_grid, y_grid), method="nearest", period=[period, u.dimensions[1]])
             fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-            plt.colorbar(axs[0].imshow(z_grid.T, cmap="viridis", extent=(0, period, 0, u.dimensions[1]), origin="lower"))
+            plt.colorbar(axs[0].imshow(z_grid, cmap="viridis", extent=(0, period, 0, u.dimensions[1]), origin="lower"))
             axs[1].imshow(z_grid2, cmap="viridis", extent=(0, period, 0, u.dimensions[1]), origin="lower", vmin=0, vmax=2)
             axs[0].set_title("Domain")
             axs[1].set_title("Composition")
@@ -217,7 +231,7 @@ for i in range(I_MIN, I_MAX+1):
     A_arr = []
     total_overlap_arr = []
     total_area_arr = []
-    for ts in tqdm(u.trajectory[::1000], total=len(u.trajectory[::1000]), desc="{}_{}".format(which, i)):
+    for ts in tqdm(u.trajectory[START::SKIP], total=len(u.trajectory[START::SKIP]), desc="{}_{}".format(which, i)):
         update_leaflets()
         overlap_arr, area_arr, A = domains_overlap()
         total_overlap_arr.append(overlap_arr)
@@ -233,10 +247,10 @@ for i in range(I_MIN, I_MAX+1):
     #plt.close(fig)
     # time evolution of the overlap
     ax.plot(total_overlap_arr, label="{}".format(i), color=colors[np.abs(i-I_MIN)])
-    # remove the first half of the lo_arr and comp_arrs
-    lo_arr = lo_arr[len(lo_arr)//2:]
-    comp_arr_lo = comp_arr_lo[len(comp_arr_lo)//2:]
-    comp_arr_ld = comp_arr_ld[len(comp_arr_ld)//2:]
+    # remove all but the last 5 microseconds of the lo_arr and comp_arrs
+    lo_arr = lo_arr[-int(5000/SKIP):]
+    comp_arr_lo = comp_arr_lo[-int(5000/SKIP):]
+    comp_arr_ld = comp_arr_ld[-int(5000/SKIP):]
     print("Mean LO area: ", np.mean(lo_arr))
     print("Mean LO composition: ", (np.mean(comp_arr_lo, axis=0)*1000).astype(int)/10)
     print("Mean LD composition: ", (np.mean(comp_arr_ld, axis=0)*1000).astype(int)/10)
