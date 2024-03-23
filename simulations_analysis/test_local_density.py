@@ -84,30 +84,21 @@ for param in PARAMS:
         is_dupc = np.array([head.resname == "DUPC" for head in heads])
         is_dapc = np.array([head.resname == which for head in heads])
         is_chol = np.array([head.resname == "CHOL" for head in heads])
-        fig, axs = plt.subplots(3, 1, figsize=(5, 5))
+        box = (period, u.dimensions[1])
+        rounded_box = (round(period), round(u.dimensions[1]))
         # get gaussian density of each head
-        gd = GaussianDensity(width=[round(u.dimensions[0]), round(u.dimensions[1])], r_max=50.0, sigma = 8.0)
+        gd = GaussianDensity(width=rounded_box, r_max=50.0, sigma = 12.0)
         # get DUPC density
-        gd.compute(system=(u.dimensions[:2], pos[is_dupc]))
-        dupc_density = gd.density.copy().reshape((round(u.dimensions[0]), round(u.dimensions[1])))
-        gd.plot(ax=axs[0])
+        gd.compute(system=(box, pos[is_dupc]))
+        dupc_density = gd.density.copy().reshape(rounded_box)
         # get DAPC density
-        gd.compute(system=(u.dimensions[:2], pos[is_dapc]))
-        dapc_density = gd.density.copy().reshape((round(u.dimensions[0]), round(u.dimensions[1])))
-        gd.plot(ax=axs[1])
-        # get CHOL density
-        gd.compute(system=(u.dimensions[:2], pos[is_chol]))
-        chol_density = gd.density.copy().reshape((round(u.dimensions[0]), round(u.dimensions[1])))
-        gd.plot(ax=axs[2])
-        plt.savefig("simulations_analysis/plots/densities.png")
-        plt.close()
+        gd.compute(system=(box, pos[np.invert(is_dupc)]))
+        rest_density = gd.density.copy().reshape(rounded_box)
         # normalize the densities
-        tot_density = dupc_density + dapc_density + chol_density
+        tot_density = dupc_density + rest_density
         dupc_density /= tot_density
-        dapc_density /= tot_density
-        chol_density /= tot_density
         # get the mean density of each head
-        z_grid = (dupc_density < 0.4).T & (dapc_density > 0.2).T & (chol_density > 0.1).T
+        z_grid = (dupc_density < 0.5).T
         xx = np.linspace(0, period, tot_density.shape[0])
         yy = np.linspace(0, u.dimensions[1], tot_density.shape[1])
         x_grid, y_grid = np.meshgrid(xx, yy)
@@ -134,6 +125,7 @@ for param in PARAMS:
             z_grid2 = pg.periodic_griddata(pos[:, :2], which_domain2, (x_grid, y_grid), method="nearest", period=[period, u.dimensions[1]])
             fig, axs = plt.subplots(1, 2, figsize=(10, 5))
             axs[0].imshow(z_grid, cmap="viridis", extent=(0, period, 0, u.dimensions[1]), origin="lower")
+            axs[0].scatter(pos[is_dupc, 0], pos[is_dupc, 1], color="red", s=1)
             axs[1].imshow(z_grid2, cmap="viridis", extent=(0, period, 0, u.dimensions[1]), origin="lower", vmin=0, vmax=2)
             axs[0].set_title("Domain")
             axs[1].set_title("Composition")
@@ -199,7 +191,7 @@ for param in PARAMS:
     total_overlap_arr = np.concatenate(total_overlap_arr)
     total_area_arr = np.concatenate(total_area_arr)
     print("Parameters: EPS_LO {}, MIN_SAMPLES_LO {}, EPS_LD {}, MIN_SAMPLES_LD {}".format(EPS_LO, MIN_SAMPLES_LO, EPS_LD, MIN_SAMPLES_LD))  
-    print("Mean LO area: ", 1.0-np.mean(lo_arr))
+    print("Mean LO area: ", np.mean(lo_arr))
     print("Mean LO composition: ", (np.mean(comp_arr_lo, axis=0)*1000).astype(int)/10)
     print("Mean LD composition: ", (np.mean(comp_arr_ld, axis=0)*1000).astype(int)/10)
     lo_arr = []
