@@ -29,14 +29,17 @@ MIN_SAMPLES_LO = 5
 EPS_LD = 14
 MIN_SAMPLES_LD = 4
 
-START = 24500
+START = 5000
 SKIP = 10
+EQUILIBRIUM = 5000
+
+PLOTS_DIR = "simulations_analysis/plots/{}/".format(which)
+
+if not os.path.exists(PLOTS_DIR):
+    os.makedirs(PLOTS_DIR)
 
 # define default colors for the plots to have gradual color
 colors = plt.cm.viridis(np.linspace(0, 1, np.abs(I_MAX-I_MIN)+1))
-
-fig, ax = plt.subplots()
-total_A_arr = []
 
 def worker(i):
     lo_arr = []
@@ -201,15 +204,14 @@ def worker(i):
         count += 1
     total_overlap_arr = np.concatenate(total_overlap_arr)
     total_area_arr = np.concatenate(total_area_arr)
-    # remove all but the last 5 microseconds of the lo_arr and comp_arrs
-    lo_arr = lo_arr[-int(5000/SKIP):]
-    comp_arr_lo = comp_arr_lo[-int(5000/SKIP):]
-    comp_arr_ld = comp_arr_ld[-int(5000/SKIP):]
-    lo_area = np.mean(lo_arr)
-    lo_comp = (np.mean(comp_arr_lo, axis=0)*1000).astype(int)/10
-    ld_comp = (np.mean(comp_arr_ld, axis=0)*1000).astype(int)/10
+    lo_arr = np.array(lo_arr)
+    comp_arr_lo = np.array(comp_arr_lo)*100 # convert to percentage
+    comp_arr_ld = np.array(comp_arr_ld)*100 # convert to percentage
+    lo_area = np.mean(lo_arr[-int(EQUILIBRIUM/SKIP):])
+    lo_comp = (np.mean(comp_arr_lo[-int(EQUILIBRIUM/SKIP):], axis=0)*10).astype(int)/10
+    ld_comp = (np.mean(comp_arr_ld[-int(EQUILIBRIUM/SKIP):], axis=0)*10).astype(int)/10
     print(i, "done")
-    return [lo_area, lo_comp, ld_comp, np.mean(A_arr), total_overlap_arr]
+    return [lo_area, lo_comp, ld_comp, np.mean(A_arr), total_overlap_arr, lo_arr, comp_arr_lo, comp_arr_ld]
 
 
 # run the workers in parallel
@@ -218,83 +220,166 @@ pool = multiprocessing.Pool(os.cpu_count())
 results = pool.map(worker, range(I_MIN, I_MAX+1))
 pool.close()
 
+def block_averaging(arr, n_chunks=10):
+    chunks = np.array_split(arr, n_chunks)
+    mean_arr = np.array([np.mean(chunk) for chunk in chunks])
+    ste = np.std(mean_arr) / np.sqrt(n_chunks - 1)
+    return ste
+
+total_A_arr = [res[3] for res in results]
+
+# plot overlap evolution
+fig, ax = plt.subplots()
 for i, res in enumerate(results):
-    total_A_arr.append(res[3])
     overlap_arr = res[4]
     ax.plot(overlap_arr, label="I={}".format(i+I_MIN), color=colors[i])
 
 ax.set_xlabel("Frame")
 ax.set_ylabel("Overlap")
 ax.set_ylim(0, 1)
+ax.set_title("Overlap evolution for {}".format(which))
 ax.legend()
-plt.savefig("simulations_analysis/plots/overlap_evolution_{}.png".format(which))
+plt.savefig("{}overlap_evolution_{}.png".format(PLOTS_DIR, which))
 plt.close(fig)
 
+# do the same with running averages
+WINDOW = 100
 
+fig, ax = plt.subplots()
+for i, res in enumerate(results):
+    overlap_arr = res[4]
+    ax.plot(np.convolve(overlap_arr, np.ones(WINDOW)/WINDOW, mode="valid"), label="I={}".format(i+I_MIN), color=colors[i])
 
-total_A_arr = np.array(total_A_arr)
+ax.set_xlabel("Frame")
+ax.set_ylabel("Overlap")
+ax.set_ylim(0, 1)
+ax.legend()
+ax.set_title("Running average of overlap evolution for {}".format(which))
+plt.savefig("{}overlap_evolution_running_{}.png".format(PLOTS_DIR, which))
 
 # plot the curvature vs I
+total_A_arr = np.array(total_A_arr)
 fig, ax = plt.subplots()
 ax.plot(np.arange(I_MIN, I_MAX+1), total_A_arr)
 ax.set_xlabel("I")
 ax.set_ylabel("Max C [nm^-1]")
-plt.savefig("simulations_analysis/plots/ave_curvature_{}.png".format(which))
+ax.set_title("Midplane mean curvature vs I for {}".format(which))
+plt.savefig("{}mean_curvature_{}.png".format(PLOTS_DIR, which))
 plt.close()
 
 # plot composition vs I
 fig, ax = plt.subplots()
 comp_arr = np.array([res[1] for res in results])
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0] - np.mean(comp_arr[:, 0]), label=which)
+comp_evolution_arr = [res[6] for res in results]
+comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
+# plot with error bar
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
 ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1] - np.mean(comp_arr[:, 1]), label="DUPC")
 ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2] - np.mean(comp_arr[:, 2]), label="CHOL")
 ax.set_xlabel("I")
 ax.set_ylabel("delta Composition [%]")
 ax.legend()
-plt.savefig("simulations_analysis/plots/ave_comp_lo_{}.png".format(which))
+ax.set_title("Delta composition of the Lo domain for {}".format(which))
+plt.savefig("{}ave_comp_lo_{}.png".format(PLOTS_DIR, which))
 plt.close()
 
 # plot composition vs I
 fig, ax = plt.subplots()
 comp_arr = np.array([res[2] for res in results])
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0] - np.mean(comp_arr[:, 0]), label=which)
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1] - np.mean(comp_arr[:, 1]), label="DUPC")
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2] - np.mean(comp_arr[:, 2]), label="CHOL")
+comp_evolution_arr = [res[7] for res in results]
+comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0] - np.mean(comp_arr[:, 0]), yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1] - np.mean(comp_arr[:, 1]), yerr=comp_ste_arr[:, 1], label="DUPC")
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2] - np.mean(comp_arr[:, 2]), yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
 ax.set_ylabel("delta Composition [%]")
 ax.legend()
-plt.savefig("simulations_analysis/plots/ave_comp_ld_{}.png".format(which))
+ax.set_title("Delta composition of the Ld domain for {}".format(which))
+plt.savefig("{}ave_comp_ld_{}.png".format(PLOTS_DIR, which))
 plt.close()
 
 # plot the area of the lo domain vs I
 fig, ax = plt.subplots()
 lo_area_arr = np.array([res[0] for res in results])
-ax.plot(np.arange(I_MIN, I_MAX+1), lo_area_arr)
+lo_area_evol = [res[5] for res in results]
+lo_area_ste = np.array([block_averaging(lo_area[-int(EQUILIBRIUM/SKIP):], n_chunks=10) for lo_area in lo_area_evol])
+ax.errorbar(np.arange(I_MIN, I_MAX+1), lo_area_arr, yerr=lo_area_ste)
 ax.set_xlabel("I")
 ax.set_ylabel("Lo Area [%]")
-plt.savefig("simulations_analysis/plots/ave_lo_area_{}.png".format(which))
+ax.set_title("Lo Area % vs I for {}".format(which))
+plt.savefig("{}lo_area_{}.png".format(PLOTS_DIR, which))
 plt.close()
 
 # plot composition vs I
 fig, ax = plt.subplots()
 comp_arr = np.array([res[1] for res in results])
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], label=which)
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], label="DUPC")
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], label="CHOL")
+comp_evolution_arr = [res[6] for res in results]
+comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], yerr=comp_ste_arr[:, 1], label="DUPC")
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
 ax.set_ylabel("Composition [%]")
+ax.set_title("Composition of the Lo domain for {}".format(which))
 ax.legend()
-plt.savefig("simulations_analysis/plots/ave_comp_lo_{}_no_shift.png".format(which))
+plt.savefig("{}ave_comp_lo_{}_no_shift.png".format(PLOTS_DIR, which))
 plt.close()
 
 # plot composition vs I
 fig, ax = plt.subplots()
 comp_arr = np.array([res[2] for res in results])
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], label=which)
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], label="DUPC")
-ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], label="CHOL")
+comp_evolution_arr = [res[7] for res in results]
+comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], yerr=comp_ste_arr[:, 1], label="DUPC")
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
 ax.set_ylabel("Composition [%]")
+ax.set_title("Composition of the Ld domain for {}".format(which))
 ax.legend()
-plt.savefig("simulations_analysis/plots/ave_comp_ld_{}_no_shift.png".format(which))
+plt.savefig("{}ave_comp_ld_{}_no_shift.png".format(PLOTS_DIR, which))
+plt.close()
+
+# plot Lo composition evolution for each I, use running averages
+WINDOW = 100
+
+for i, res in enumerate(results):
+    fig, ax = plt.subplots()
+    comp_arr = res[6]
+    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=which, color="blue")
+    ax.plot(np.convolve(comp_arr[:, 1] - comp_arr[:, 1].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="DUPC", color="red")
+    ax.plot(np.convolve(comp_arr[:, 2] - comp_arr[:, 2].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="CHOL", color="green")
+    ax.set_xlabel("Frame")
+    ax.set_ylabel("Delta composition [%]")
+    ax.set_title("Lo composition for I={} for {}".format(i+I_MIN, which))
+    ax.legend()
+    plt.savefig("{}comp_evolution_lo_{}_{}.png".format(PLOTS_DIR, which, i+I_MIN))
+    plt.close()
+
+# plot Ld composition evolution for each I, use running averages
+WINDOW = 100
+
+for i, res in enumerate(results):
+    fig, ax = plt.subplots()
+    comp_arr = res[7]
+    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=which, color="blue")
+    ax.plot(np.convolve(comp_arr[:, 1] - comp_arr[:, 1].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="DUPC", color="red")
+    ax.plot(np.convolve(comp_arr[:, 2] - comp_arr[:, 2].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="CHOL", color="green")
+    ax.set_xlabel("Frame")
+    ax.set_ylabel("Delta composition [%]")
+    ax.set_title("Ld composition for I={} for {}".format(i+I_MIN, which))
+    ax.legend()
+    plt.savefig("{}comp_evolution_ld_{}_{}.png".format(PLOTS_DIR, which, i+I_MIN))
+    plt.close()
+
+# plot mean overlap vs I
+fig, ax = plt.subplots()
+overlap_arr = [np.mean(res[4][-int(EQUILIBRIUM/SKIP):]) for res in results]
+overlap_evolution_arr = [res[4] for res in results]
+overlap_ste_arr = np.array([block_averaging(overlap_evolution[-int(EQUILIBRIUM/SKIP):], n_chunks=10) for overlap_evolution in overlap_evolution_arr])
+ax.errorbar(np.arange(I_MIN, I_MAX+1), overlap_arr, yerr=overlap_ste_arr)
+ax.set_xlabel("I")
+ax.set_ylabel("Mean Overlap")
+ax.set_title("Mean Overlap vs I for {}".format(which))
+plt.savefig("{}mean_overlap_{}.png".format(PLOTS_DIR, which))
 plt.close()

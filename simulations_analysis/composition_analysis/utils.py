@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 LIPIDS_DEF = {}
 # read lipid identification folder
-with open("lipids.txt") as f:
+with open("simulations_analysis/composition_analysis/lipids.txt") as f:
     lines = f.readlines()
     n = 0
     while n < len(lines):

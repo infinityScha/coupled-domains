@@ -12,15 +12,14 @@ import matplotlib.pyplot as plt
 import freud
 from scipy import ndimage
 
+import MDAnalysis as mda
+
 from tqdm import tqdm
 import utils
 
 #####Constants########
 
 # filenames and dirs
-folder = '/run/media/itay/Elements/curved-domains/NEW2_FLATBOT/'
-grofiles = ['DMPC_FORCEFLAT_075_nw.gro', 'DAPC_FORCEFLAT_075_nw.gro', 'DPPC_FORCEFLAT_075_nw.gro']
-xtcfiles = ['DMPC_FORCEFLAT_075_whole.xtc', 'DAPC_FORCEFLAT_075_whole.xtc', 'DPPC_FORCEFLAT_075_whole.xtc']
 
 #####Functions########
 
@@ -38,8 +37,9 @@ def positions():
 
 
 
-for grofile, xtcfile in zip(grofiles, xtcfiles):
-    print(grofile[:-4])
+for which in ['DAPC', 'DPPC']:
+    folder = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/FORCEDFLAT/{}/075/".format(which)
+    grofile, xtcfile = "{}_FORCEFLAT_075_nw.gro".format(which), "{}_FORCEFLAT_075.xtc".format(which)
     ul = utils.UniverseLoader(folder+grofile, folder+xtcfile, normal=2, by_tails=False )
     universe = ul.universe
 
@@ -47,14 +47,14 @@ for grofile, xtcfile in zip(grofiles, xtcfiles):
     for frame in tqdm(universe.trajectory[20000::10], total=len(universe.trajectory[20000::10]), desc='compositions'):
         dim_arr.append(universe.dimensions[0])
     print('width', np.mean(dim_arr))
-    """
+
     tails_selection = 'all'
     tails = ul.universe.select_atoms(tails_selection)
     tails_res = tails.residues
     
     lo_comp_list, ld_comp_list = [], []
 
-    for frame in tqdm(universe.trajectory[20000::10], total = len(universe.trajectory[20000::10]), desc='compositions'):
+    for frame in tqdm(universe.trajectory[-5000::10], total = len(universe.trajectory[-5000::10]), desc='compositions'):
         leaflets_pos, leaflets_res, (Lx, Ly, Lz) = positions()
         for res, pos in zip(leaflets_res, leaflets_pos):
             ld_pos = pos[res == 'DUPC']
@@ -104,4 +104,3 @@ for grofile, xtcfile in zip(grofiles, xtcfiles):
     print('====ld====')
     for resname, c in zip(resnames, counts):
         print(resname, c / counts.sum())
-    """
