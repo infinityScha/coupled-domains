@@ -21,10 +21,12 @@ warnings.filterwarnings("ignore")
 
 DEBUG = False
 
-which = "DPPC"
+WHICH = "DAPC"
+FLATTEN = True
+
 
 # Parameters
-sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/{}/".format(which)
+sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/{}/".format(WHICH)
 
 I_MIN = 23
 I_MAX = 32
@@ -33,13 +35,13 @@ SKIP = 10
 EQUILIBRIUM = 25000
 SMOOTH_BY = 21
 
-RESNAMES = [which, "DUPC", "CHOL"]
+RESNAMES = [WHICH, "DUPC", "CHOL"]
 COLORS = ["blue", "red", "green"]
 COMP_LO = {"DPPC": [0.62, 0.02, 0.36], "DAPC": [0.61, 0.04, 0.35]}
 COMP_LD = {"DPPC": [0.04, 0.85, 0.11], "DAPC": [0.02, 0.88, 0.10]}
 
-PLOTS_DIR = "simulations_analysis/plots/{}/".format(which)
-DATA_DIR = "simulations_analysis/data/{}/".format(which)
+PLOTS_DIR = "simulations_analysis/plots/{}/".format(WHICH)
+DATA_DIR = "simulations_analysis/data/{}/".format(WHICH)
 
 if not os.path.exists(PLOTS_DIR):
     os.makedirs(PLOTS_DIR)
@@ -70,14 +72,15 @@ def moving_average(data, window_size):
 
 def worker(i):
 
-    grofile = "{}_{}_nw.gro".format(which, i)
-    xtcfile = "{}_{}.xtc".format(which, i)
+    grofile = "{}_{}_nw.gro".format(WHICH, i)
+    xtcfile = "{}_{}.xtc".format(WHICH, i)
 
     # Load trajectory
     u = mda.Universe(os.path.join(sim_dir, grofile), os.path.join(sim_dir, xtcfile))
     # center first frame and save
     ag = u.select_atoms("name GL1 GL2")
     u.trajectory.add_transformations(lpp.transformations.transformations.center_membrane(ag, min_diff=2.5), NoJump())
+    tails = u.select_atoms("name C4A C4B C2")
 
     def set_leaflets():
         leaflets_file = DATA_DIR + "leaflets_{}.npy".format(i)
@@ -123,34 +126,39 @@ def worker(i):
         dys = np.diff(ys)
         return np.sum(np.sqrt(dxs**2 + dys**2))
 
-    def fit_the_curve(which=0):
-        leaflet = leaflet1 if which == 0 else leaflet2 
-        resnames = [res.resname for res in leaflet]    
-        pos = np.array([res.atoms[0].position for res in leaflet])
-        pos %= u.dimensions[:3]
-        return resnames, pos
+    def fit_the_curve():
+        resnames, pos = [], []
+        # smooth the midplane
+        if FLATTEN:
+            tails_pos = tails.positions
+            x = tails_pos[:, 0]
+            z = tails_pos[:, 2]
+            f = smooth_xz(x, z)
+        else:
+            f = lambda x: x
+        for leaflet in [leaflet1, leaflet2]:
+            resnames.append([res.resname for res in leaflet])
+            pos_ = np.array([arc_length(f, res.atoms[-1].position[0]) for res in leaflet])  
+            pos.append(pos_)
+        arc_length1 = arc_length(f, u.dimensions[0])
+        return resnames, pos, arc_length1
 
     def density(bins=60):
         # fit the curve for both leaflets
-        resnames1, pos1 = fit_the_curve(which=0)
-        resnames2, pos2 = fit_the_curve(which=1)
+        resnames, pos, period = fit_the_curve()
         # compute the histograms
-        hists1 = []
+        hists = [[], []]
         for resname in RESNAMES:
-            mask = np.array(resnames1) == resname
-            hist, edges = np.histogram(pos1[mask, 0], bins=bins, range=(0, u.dimensions[0]))
-            hists1.append(hist)
-        hists2 = []
-        for resname in RESNAMES:
-            mask = np.array(resnames2) == resname
-            hist, edges = np.histogram(pos2[mask, 0], bins=bins, range=(0, u.dimensions[0]))
-            hists2.append(hist)
-        return hists1, hists2
+            for (resnames_, pos_, hists_) in zip(resnames, pos, hists):
+                mask = np.array(resnames_) == resname
+                hist = np.histogram(pos_[mask], bins=bins, range=(0, period))[0]
+                hists_.append(hist)
+        return hists, period
     
-    def find_peak(x, z, period):
-        # average the z values over int(period/4) bins of x
-        x_bins = np.linspace(0, period, int(period/8)+1, endpoint=True)
-        x_bins_wider = np.linspace(0, period, 6, endpoint=True)
+    def smooth_xz(x, z, bins=60):
+        # average the z values over int(u.dimensions[0]/4) bins of x
+        x_bins = np.linspace(0, u.dimensions[0], int(u.dimensions[0]/8)+1, endpoint=True)
+        x_bins_wider = np.linspace(0, u.dimensions[0], 6, endpoint=True)
         z_bins = np.zeros(len(x_bins)-1)
         # find outliers and move them to the group through the pbc
         for i in range(len(x_bins_wider)-1):
@@ -175,9 +183,13 @@ def worker(i):
         # periodic spline interpolation
         x_bins = 0.5 * (x_bins[1:] + x_bins[:-1])
         f = interp1d(x_bins, z_bins, kind='cubic', bounds_error=False, fill_value='extrapolate')
+        return f
+
+    def find_peak(x, z):
+        f = smooth_xz(x, z)
         # find the peak
-        l_period = int(period)
-        x_ = np.linspace(0, period, l_period*100)
+        l_period = int(u.dimensions[0])
+        x_ = np.linspace(0, u.dimensions[0], l_period*100)
         fx_ = f(x_)
         # get rough derivative by 10% x-dim difference, use pbc
         dfx_ = np.abs(np.roll(fx_, -l_period*5) - np.roll(fx_, l_period*5))
@@ -211,8 +223,8 @@ def worker(i):
         pos2 = np.array(first_atoms2.positions)
         x1, z1 = pos1[:, 0] % period, pos1[:, 2]
         x2, z2 = pos2[:, 0] % period, pos2[:, 2]
-        peak1 = find_peak(x1,z1,period)/period * 2 *np.pi
-        peak2 = find_peak(x2,z2,period)/period * 2 *np.pi
+        peak1 = find_peak(x1,z1)/period * 2 *np.pi
+        peak2 = find_peak(x2,z2)/period * 2 *np.pi
         if DEBUG:
             plt.savefig("test.png")
             plt.close()
@@ -254,6 +266,7 @@ def worker(i):
     ag = u.select_atoms("name GL1 GL2 ROH")
     u.trajectory.add_transformations(lpp.transformations.transformations.center_membrane(ag, min_diff=2.5), NoJump(), shift_by_peak)
     leaflets, leaflets_no_chol, residues_no_chol = set_leaflets()
+    tails = u.select_atoms("name C4A C4B C2")
 
     print(i, "start")
     len_traj = len(u.trajectory[EQUILIBRIUM::SKIP])
@@ -277,10 +290,10 @@ def worker(i):
             plt.close(fig)
             sleep(0.7)
         count += 1
-        hists1, hists2 = density()
+        [hists1, hists2], period = density()
         hists1_arr.append(hists1)
         hists2_arr.append(hists2)
-        period_arr.append(u.dimensions[0])
+        period_arr.append(period)
     hists1_arr = np.array(hists1_arr)
     hists2_arr = np.array(hists2_arr)
     hists1 = np.mean(hists1_arr, axis=0)
@@ -311,12 +324,12 @@ for i, result in enumerate(results):
         axs[0].plot(xs, hist1*100, color=color)
         axs[1].plot(xs, hist2*100, color=color)
     # plot ideal compositions
-    for comp_lo, comp_ld, color in zip(COMP_LO[which], COMP_LD[which], COLORS):
+    for comp_lo, comp_ld, color in zip(COMP_LO[WHICH], COMP_LD[WHICH], COLORS):
         axs[0].axhline(comp_lo*100, color=color, linestyle='--', alpha=0.3)
         axs[0].axhline(comp_ld*100, color=color, linestyle='-.', alpha=0.3)
         axs[1].axhline(comp_lo*100, color=color, linestyle='--', alpha=0.3)
         axs[1].axhline(comp_ld*100, color=color, linestyle='-.', alpha=0.3)
-    axs[0].set_title("Relative composition for I={} and {}".format(i+I_MIN, which))
+    axs[0].set_title("Relative composition for I={} and {}".format(i+I_MIN, WHICH))
     axs[0].set_ylabel("Composition [%]")
     axs[1].set_xlabel("x [A]")
     axs[1].set_ylabel("Composition [%]")
@@ -325,5 +338,6 @@ for i, result in enumerate(results):
     axs[0].set_xlim(0, period)
     axs[1].set_xlim(0, period)
     axs[0].legend(RESNAMES)
-    plt.savefig("{}composition_{}.png".format(PLOTS_DIR, i+I_MIN))
+    filename = "{}composition_{}.png".format(PLOTS_DIR, i+I_MIN) if not FLATTEN else "{}composition_{}_flattened.png".format(PLOTS_DIR, i+I_MIN)
+    plt.savefig(filename)
     plt.close()
