@@ -18,31 +18,31 @@ ENV["GKSwstype"] = "100"
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
-const I = 2/3*sqrt(2) #0.85714*sqrt(2) #0.8*sqrt(2) #0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
+const I = 2/3*sqrt(2) #0.85714*sqrt(2) for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
 const γ = 3.0 # line tension [kT/nm] = I√(K⋅ϵ)
 const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
-const λ = 0.25 # interleaflet coupling [kT/nm²]
-const γₗ = 0.25 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
+const λ = 0.1 # interleaflet coupling [kT/nm²]
+const γₗ = 0.1 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
 const dλdt = 0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
 const max_noise_wavelength = 2.5 # [nm]
 const Kᴸᵒ = 22.9 # bending modulus of Lo phase [kT]
 const Kᴸᵈ = 8.9 # bending modulus of Ld phase [kT]
-const R = 20.0 # radius of curvature at the maximum [nm] 
+const R = 10000 # radius of curvature at the maximum [nm], |R| > 1000 for flat
 const Jₛᴸᵒ = -0.282 # spontaneous curvature of Lo phase [nm^-1]
 const Jₛᴸᵈ = -0.305 # spontaneous curvature of Ld phase [nm^-1]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
 const M₁ = 6 # log(2, grid size)
 const M₂ = 5 # log(2, grid size)
-const L₁ = 20.0 # box size [nm]
+const L₁ = 32.0 # box size [nm]
 const Δt = 1.0e-2 # time step [ns]
 # deduced numerical & physical parameters
 const N₁ = 2^M₁ # grid size
 const N₂ = 2^M₂ # grid size
 const K = γ*σ/I
 const ϵ = K/σ^2
-const L₂ = L₁*2.0^(M₂-M₁) # box size [nm]
+const L₂ = 14.0 #L₁*2.0^(M₂-M₁) # box size [nm]
 
 # external field matrix
 const H₁ˡᵒ = zeros(N₁,N₂)
@@ -51,6 +51,9 @@ const H₂ˡᵒ = zeros(N₁,N₂)
 const H₂ˡᵈ = zeros(N₁,N₂)
 # approximate curvature matrix
 function Hij(i, R, is_lo=true)
+    if abs(R) > 1000.0
+        return 0.0
+    end
     c = -sin(2*π*i/N₁)/R
     if is_lo
         return 0.5*Kᴸᵒ*(c - Jₛᴸᵒ)^2 # at Φ = 1
@@ -135,6 +138,29 @@ function plot_c_distribution(cᵤ, cₗ)
     #right_90_k2 = k2.x[findfirst(x->x>0.95, cs_k2)]
     #println("left_90_k1 = ", left_90_k1, ", right_90_k1 = ", right_90_k1)
     #println("left_90_k2 = ", left_90_k2, ", right_90_k2 = ", right_90_k2)
+end
+
+function plot_1d_averaged_profile(c_list)
+    cᵤs = [c[1] for c in c_list]
+    cₗs = [c[2] for c in c_list]
+    # keep only the second half of the profiles
+    if size(cᵤs)[1] > 1
+        cᵤs = cᵤs[round(Int, length(cᵤs)/2):end]
+        cₗs = cₗs[round(Int, length(cₗs)/2):end]
+    end
+    # average over all cᵤs and cₗs
+    cᵤ = reduce(+, cᵤs) / length(cᵤs)
+    cₗ = reduce(+, cₗs) / length(cₗs)
+    # average over 2nd dimension of cᵤ and cₗ
+    cᵤ = mean(cᵤ, dims=2)[:]
+    cₗ = mean(cₗ, dims=2)[:]
+    # shift plots by L₁/4
+    cᵤ = circshift(cᵤ, round(Int, N₁/4))
+    cₗ = circshift(cₗ, round(Int, N₁/4))
+    x = range(0.0, L₁, N₁)
+    p = plot(x, cᵤ, color=:red, label="u", legend=false, title="1D averaged profile", xlabel="x [nm]", ylabel="c", size=(1000,500), xlims=(0,L₁), ylims=(-1,1), xticks=0:1:L₁)
+    plot!(x, cₗ, color=:blue, label="l")
+    savefig("curr_ave_1d_profile.png")
 end
 
 function coupling_ratio(cᵤ, cₗ)
@@ -230,6 +256,7 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
             p = plot_spectrum(cᵤ, cₗ, coupling_list_plot, fit_list_plot, step = plot_every)
             savefig("curr.png")
             plot_c_distribution(cᵤ, cₗ)
+            plot_1d_averaged_profile(c_list)
             if verbose
                 pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_plot[end], λ_, maximum(cᵤ), minimum(cᵤ))
             end
@@ -358,7 +385,7 @@ cₗ = zeros(N₁,N₂) .+ c₀
 # solve
 #c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=0, plot_every=25)
 #c_list, coupling_list = solver(cᵤ, cₗ, round(Int, 250/Δt), save_every=round(Int, 0.5/Δt), plot_every=round(Int, 0.5/Δt))
-c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 25000/Δt), save_every=round(Int, 100/Δt), plot_every=round(Int, 10/Δt))
+c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 25000/Δt), save_every=round(Int, 10/Δt), plot_every=round(Int, 10/Δt))
 #c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=10000, plot_every=0)
 save_state(c_list[end][1], c_list[end][2], "final_large3.jld2")
 animate_time_evolution(c_list, coupling_list, fit_list, "large3.gif", step=100.0)

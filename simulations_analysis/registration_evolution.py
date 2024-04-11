@@ -16,10 +16,12 @@ from scipy.spatial import cKDTree
 import warnings
 warnings.filterwarnings("ignore")
 
-which = "DAPC"
+lipid = "DAPC"
+folder = "CURVED_LINACTANT"
+which = "DAPC_LIN"
 
 # Parameters
-sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/{}/".format(which)
+sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/{}/".format(folder)
 
 I_MIN = 23
 I_MAX = 38
@@ -82,8 +84,8 @@ def worker(i):
         pos[:, 2] = 0.0
         return pos
 
-    def fit_the_curve(which=0):
-        leaflet = leaflet1 if which == 0 else leaflet2 
+    def fit_the_curve(which_=0):
+        leaflet = leaflet1 if which_ == 0 else leaflet2 
         resnames = [res.resname for res in leaflet]
         pos = []
         for res in leaflet:
@@ -91,7 +93,7 @@ def worker(i):
                 pos.append(res.atoms[-1].position)
             else:
                 tail2 = res.atoms[-1].position
-                tail1 = res.atoms[-6 if which == "DAPC" else -5].position
+                tail1 = res.atoms[-6 if lipid == "DAPC" else -5].position
                 pos.append((tail1 + tail2) / 2)
         pos = np.array(pos)
 
@@ -134,7 +136,7 @@ def worker(i):
     def dbscan_clus_(resnames, pos, period):
         is_dupc = np.array([resname == "DUPC" for resname in resnames])
         not_dupc = np.invert(is_dupc)
-        is_dapc = np.array([resname == which for resname in resnames])
+        is_dapc = np.array([resname == lipid for resname in resnames])
         is_chol = np.array([resname == "CHOL" for resname in resnames])
         labels_lo = _clus_helper(pos[not_dupc], period, EPS_LO, MIN_SAMPLES_LO)
         labels_lo[labels_lo > -1] = 1
@@ -273,7 +275,7 @@ comp_arr = np.array([res[1] for res in results])
 comp_evolution_arr = [res[6] for res in results]
 comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
 # plot with error bar
-ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=lipid)
 ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1] - np.mean(comp_arr[:, 1]), label="DUPC")
 ax.plot(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2] - np.mean(comp_arr[:, 2]), label="CHOL")
 ax.set_xlabel("I")
@@ -288,7 +290,7 @@ fig, ax = plt.subplots()
 comp_arr = np.array([res[2] for res in results])
 comp_evolution_arr = [res[7] for res in results]
 comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
-ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0] - np.mean(comp_arr[:, 0]), yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0] - np.mean(comp_arr[:, 0]), yerr=comp_ste_arr[:, 0], label=lipid)
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1] - np.mean(comp_arr[:, 1]), yerr=comp_ste_arr[:, 1], label="DUPC")
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2] - np.mean(comp_arr[:, 2]), yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
@@ -315,7 +317,7 @@ fig, ax = plt.subplots()
 comp_arr = np.array([res[1] for res in results])
 comp_evolution_arr = [res[6] for res in results]
 comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
-ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=lipid)
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], yerr=comp_ste_arr[:, 1], label="DUPC")
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
@@ -330,7 +332,7 @@ fig, ax = plt.subplots()
 comp_arr = np.array([res[2] for res in results])
 comp_evolution_arr = [res[7] for res in results]
 comp_ste_arr = np.array([[block_averaging([c[i] for c in comp_evolution[-int(EQUILIBRIUM/SKIP):]], n_chunks=10) for i in range(3)] for comp_evolution in comp_evolution_arr])
-ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=which)
+ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 0], yerr=comp_ste_arr[:, 0], label=lipid)
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 1], yerr=comp_ste_arr[:, 1], label="DUPC")
 ax.errorbar(np.arange(I_MIN, I_MAX+1), comp_arr[:, 2], yerr=comp_ste_arr[:, 2], label="CHOL")
 ax.set_xlabel("I")
@@ -346,7 +348,7 @@ WINDOW = 100
 for i, res in enumerate(results):
     fig, ax = plt.subplots()
     comp_arr = res[6]
-    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=which, color="blue")
+    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=lipid, color="blue")
     ax.plot(np.convolve(comp_arr[:, 1] - comp_arr[:, 1].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="DUPC", color="red")
     ax.plot(np.convolve(comp_arr[:, 2] - comp_arr[:, 2].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="CHOL", color="green")
     ax.set_xlabel("Frame")
@@ -362,7 +364,7 @@ WINDOW = 100
 for i, res in enumerate(results):
     fig, ax = plt.subplots()
     comp_arr = res[7]
-    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=which, color="blue")
+    ax.plot(np.convolve(comp_arr[:, 0] - comp_arr[:, 0].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label=lipid, color="blue")
     ax.plot(np.convolve(comp_arr[:, 1] - comp_arr[:, 1].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="DUPC", color="red")
     ax.plot(np.convolve(comp_arr[:, 2] - comp_arr[:, 2].mean(), np.ones(WINDOW)/WINDOW, mode="valid"), label="CHOL", color="green")
     ax.set_xlabel("Frame")
