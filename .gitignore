@@ -25,3 +25,6 @@ simulations_analysis/csv_prev/*
 simulations_analysis/plots_prev/*
 nohup.out
 curr_ave_1d_profile.csv
+test_params
+test_params/*
+*.log

@@ -15,20 +15,17 @@ using Colors
 
 # set GR plotting backend
 ENV["GKSwstype"] = "100"
-#gr()
 
-
-# 
 # Semi-implicit Fourier spectral method for the Cahn-Hilliard equation 
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
 const I = 2/3*sqrt(2) #0.85714*sqrt(2) for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
-const γ = 3.0 # line tension [kT/nm] = I√(K⋅ϵ)
+const γ = parse(Float64, ARGS[1]) # line tension [kT/nm] = I√(K⋅ϵ)
 const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
-const λ = 0.1 # interleaflet coupling [kT/nm²]
-const γₗ = 0.1 # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
+const λ = parse(Float64, ARGS[2]) # interleaflet coupling [kT/nm²]
+const γₗ = parse(Float64, ARGS[3]) # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
 const dλdt = 0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
 const max_noise_wavelength = 2.5 # [nm]
 const Kᴸᵒ = 22.9 # bending modulus of Lo phase [kT]
@@ -101,6 +98,14 @@ const A = 1.0./temp
 const B = -ϵ*Δt*k²./temp
 const C = -Δt./temp
 const η = sqrt(2.0*ζ/Δt/L₁*N₁/L₂*N₂)
+# filename and folder for saving
+# filename include the ARGS
+const filename = ARGS[1]*"_"*ARGS[2]*"_"*ARGS[3]
+const folder = "test_params/"
+# make folder if it does not exist
+if !isdir(folder)
+    mkdir(folder)
+end
 
 function colorfunc(c)
     return clamp(c, -1.0, 1.0)
@@ -133,7 +138,7 @@ function plot_c_distribution(cᵤ, cₗ)
     p1 = plot(k1.x, k1.density, color=:red, label="u")
     p2 = plot(k2.x, k2.density, color=:blue, label="l")
     p = plot(p1, p2, layout=(1,2), size=(1000,500))
-    savefig("curr_c_distribution.png")
+    savefig(folder*filename*"_dist.png")
 end
 
 function _center_point(c)
@@ -191,9 +196,9 @@ function plot_1d_averaged_profile(c_list, ld_com=false)
     x = range(0.0, L₁, N₁+1)[1:end-1]
     p = plot(x, cᵤ, color=:red, label="u", legend=false, title="1D averaged profile", xlabel="x [nm]", ylabel="c", size=(1000,500), xlims=(0,L₁), ylims=(-1,1), xticks=0:1:L₁)
     plot!(x, cₗ, color=:blue, label="l")
-    savefig("curr_ave_1d_profile.png")
+    savefig(folder*filename*"_1d_profile.png")
     # save to CSV as well
-    CSV.write("curr_ave_1d_profile.csv", DataFrame(x=x, cᵤ=cᵤ, cₗ=cₗ))
+    CSV.write(folder*filename*"_1d_profile.csv", DataFrame(x=x, cᵤ=cᵤ, cₗ=cₗ))
 end
 
 function coupling_ratio(cᵤ, cₗ)
@@ -299,6 +304,7 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
         end
         λ_ = max(λ_ + dλdt * Δt, 0.0)
     end
+    plot_1d_averaged_profile(c_list, true)
     return c_list, coupling_list_save, fit_list_save
 end
 
@@ -373,52 +379,11 @@ function make_grid(c₀,; upper=true, to_mid=false)
     return c
 end
 
-# find suggested lambda
-function en_profile_1d()
-    en_list = Vector{Float64}[]
-    cᵤ = make_grid(c₀, upper=true)
-    cₗ = make_grid(c₀, upper=true)
-    @showprogress for i in 1:N₁
-        push!(en_list, Float64[])
-        # shift upper by 1 in the y direction
-        cᵤ = circshift(cᵤ, (1,0))
-        for j in 1:N₁
-            # shift lower by 1 in the y direction
-            cₗ = circshift(cₗ, (1,0))
-            # minimize energy a bit
-            c_list, coupling_list = solver(cᵤ, cₗ, 10, save_every=10, plot_every=0, initial_λ=0.0, noisy = false, verbose = false)
-            push!(en_list[end], energy(c_list[end][1], c_list[end][2]))
-        end
-    end
-    # plot energy heatmap
-    en_list = hcat(en_list...)
-    en_list .-= minimum(en_list)
-    p = heatmap(en_list, aspect_ratio=1, color=:bluesreds, cbar=true, axis=nothing, border=:none, ticks=nothing, title = "Energy")
-    # mark the minimas regions up to 3kT 
-    for i in 1:N₁
-        for j in 1:N₁
-            if en_list[i,j] < 1.0
-                # make with a red dot
-                plot!(p, [j], [i], m=(5, :red), legend=false)
-            end
-        end
-    end
-    savefig("en_profile_1d.png")
-end
-
-#en_profile_1d()
-
 # make initial uniform grid
 #cᵤ = make_grid(c₀, to_mid = true)
 #cₗ = make_grid(c₀, to_mid = true)
-#cᵤ, cₗ = load_state("final_large2.jld2")
 cᵤ = zeros(N₁,N₂) .+ c₀
 cₗ = zeros(N₁,N₂) .+ c₀
 
 # solve
-#c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=0, plot_every=25)
-#c_list, coupling_list = solver(cᵤ, cₗ, round(Int, 250/Δt), save_every=round(Int, 0.5/Δt), plot_every=round(Int, 0.5/Δt))
-c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 2500/Δt), save_every=round(Int, 10/Δt), plot_every=round(Int, 10/Δt))
-#c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=10000, plot_every=0)
-#save_state(c_list[end][1], c_list[end][2], "final_large3.jld2")
-#animate_time_evolution(c_list, coupling_list, fit_list, "large3.gif")
+c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 5000/Δt), save_every=round(Int, 10/Δt), plot_every=0, verbose=false)#round(Int, 10/Δt))
