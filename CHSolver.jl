@@ -1,12 +1,17 @@
 using Statistics
-using Plots
-using ProgressMeter
+using LinearAlgebra
+using Interpolations
+using KernelDensity
 using FFTW
+using Roots
+using Plots
+using DataFrames
+using CSV
+using ProgressMeter
 using Printf
 using JLD2
 using ColorSchemes
 using Colors
-using KernelDensity
 
 # set GR plotting backend
 ENV["GKSwstype"] = "100"
@@ -54,7 +59,7 @@ function Hij(i, R, is_lo=true)
     if abs(R) > 1000.0
         return 0.0
     end
-    c = -sin(2*π*i/N₁)/R
+    c = -sin(2*π*i/(N₁+1))/R
     if is_lo
         return 0.5*Kᴸᵒ*(c - Jₛᴸᵒ)^2 # at Φ = 1
     end
@@ -129,18 +134,37 @@ function plot_c_distribution(cᵤ, cₗ)
     p2 = plot(k2.x, k2.density, color=:blue, label="l")
     p = plot(p1, p2, layout=(1,2), size=(1000,500))
     savefig("curr_c_distribution.png")
-    # print the 90% left and right tails threshold
-    #cs_k1 = cumsum(k1.density)*(k1.x[2]-k1.x[1])
-    #cs_k2 = cumsum(k2.density)*(k2.x[2]-k2.x[1])
-    #left_90_k1 = k1.x[findfirst(x->x>0.05, cs_k1)]
-    #right_90_k1 = k1.x[findfirst(x->x>0.95, cs_k1)]
-    #left_90_k2 = k2.x[findfirst(x->x>0.05, cs_k2)]
-    #right_90_k2 = k2.x[findfirst(x->x>0.95, cs_k2)]
-    #println("left_90_k1 = ", left_90_k1, ", right_90_k1 = ", right_90_k1)
-    #println("left_90_k2 = ", left_90_k2, ", right_90_k2 = ", right_90_k2)
 end
 
-function plot_1d_averaged_profile(c_list)
+function _center_point(c)
+    # find the center point of the c distribution
+    # average c over the 1st dimension
+    c = 0.5.*(mean(c, dims=2)[:] .+ 1.0)
+    # find first fourier mode
+    w = exp.(-2im * π * collect(0:N₁-1) / N₁)
+    f1 = dot(c, w)
+    angle = Base.angle(conj(f1))
+    if angle < 0
+        angle += 2π
+    end
+    approx_center = L₁ * angle / (2π)
+    x = range(0.0, L₁, N₁+1)[1:end-1]
+    x_shifted = (x .- approx_center .+ L₁/2) .% L₁
+    # find the center point via zero point of cumsum
+    argsort_x_shifted = sortperm(x_shifted)
+    x_shifted = x_shifted[argsort_x_shifted]
+    c_shifted = c[argsort_x_shifted]
+    cumsum_c = cumsum(c_shifted)
+    cumsum_c /= cumsum_c[end] + cumsum_c[1]
+    # do linear interpolation of cumsum
+    f = interpolate((x_shifted,), cumsum_c .- 0.5, Gridded(Linear()))
+    f = extrapolate(f, Flat())
+    # find the zero point
+    center = (find_zero(f, (0.0, L₁), Bisection()) - L₁/2 + approx_center) % L₁
+    return center 
+end
+
+function plot_1d_averaged_profile(c_list, ld_com=false)
     cᵤs = [c[1] for c in c_list]
     cₗs = [c[2] for c in c_list]
     # keep only the second half of the profiles
@@ -148,19 +172,28 @@ function plot_1d_averaged_profile(c_list)
         cᵤs = cᵤs[round(Int, length(cᵤs)/2):end]
         cₗs = cₗs[round(Int, length(cₗs)/2):end]
     end
+    # fit ld com to be at 0 if needed
+    if ld_com
+        peaks = [_center_point(c) for c in cᵤs]
+        xs = [range(0.0, L₁, N₁+1)[1:end-1] for c in cᵤs]
+        xs_shifted = [(x .- peak .+ L₁/2) .% L₁ for (x, peak) in zip(xs, peaks)]
+        xs_shifted_argsort = [sortperm(x) for x in xs_shifted]
+        cᵤs_interp = [interpolate((x[argsort_x],), mean(c[argsort_x], dims=2)[:], Gridded(Linear(Periodic()))) for (x, c, argsort_x) in zip(xs_shifted, cᵤs, xs_shifted_argsort)]
+        cₗs_interp = [interpolate((x[argsort_x],), mean(c[argsort_x], dims=2)[:], Gridded(Linear(Periodic()))) for (x, c, argsort_x) in zip(xs_shifted, cₗs, xs_shifted_argsort)]
+        cᵤs_extrap = [extrapolate(c, Periodic()) for c in cᵤs_interp]
+        cₗs_extrap = [extrapolate(c, Periodic()) for c in cₗs_interp]
+        cᵤs = [c(x) for (c, x) in zip(cᵤs_extrap, xs)]
+        cₗs = [c(x) for (c, x) in zip(cₗs_extrap, xs)]
+    end
     # average over all cᵤs and cₗs
     cᵤ = reduce(+, cᵤs) / length(cᵤs)
     cₗ = reduce(+, cₗs) / length(cₗs)
-    # average over 2nd dimension of cᵤ and cₗ
-    cᵤ = mean(cᵤ, dims=2)[:]
-    cₗ = mean(cₗ, dims=2)[:]
-    # shift plots by L₁/4
-    cᵤ = circshift(cᵤ, round(Int, N₁/4))
-    cₗ = circshift(cₗ, round(Int, N₁/4))
-    x = range(0.0, L₁, N₁)
+    x = range(0.0, L₁, N₁+1)[1:end-1]
     p = plot(x, cᵤ, color=:red, label="u", legend=false, title="1D averaged profile", xlabel="x [nm]", ylabel="c", size=(1000,500), xlims=(0,L₁), ylims=(-1,1), xticks=0:1:L₁)
     plot!(x, cₗ, color=:blue, label="l")
     savefig("curr_ave_1d_profile.png")
+    # save to CSV as well
+    CSV.write("curr_ave_1d_profile.csv", DataFrame(x=x, cᵤ=cᵤ, cₗ=cₗ))
 end
 
 function coupling_ratio(cᵤ, cₗ)
@@ -209,7 +242,7 @@ end
 
 function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ, noisy = true, verbose = true)
     λ_ = initial_λ
-    c_list = [[cᵤ, cₗ]]
+    c_list = []#[[cᵤ, cₗ]]
     coupling_list_save = [coupling_ratio(cᵤ, cₗ)]
     coupling_list_plot = [coupling_list_save[end]]
     fit_list_save = [domain_fit(cᵤ, cₗ)]
@@ -241,24 +274,24 @@ function solver(cᵤ, cₗ, Nsteps, ;save_every=100, plot_every=0, initial_λ=λ
         cᵤ = real(ifft(ĉⁿ⁺¹ᵤ))
         cₗ = real(ifft(ĉⁿ⁺¹ₗ))
         # save
-        if (save_every != 0) && (i % save_every == 0)
+        if (save_every != 0) && (i % save_every == 0) && (i*Δt > 100.0)
             push!(coupling_list_save, coupling_ratio(cᵤ, cₗ))
             push!(fit_list_save, domain_fit(cᵤ, cₗ))
             push!(c_list, [cᵤ, cₗ])
             # set progressbar title to coupling ratio
             if verbose
-                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_save[end], λ_, maximum(cᵤ), minimum(cᵤ))
+                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f | Time: %.3f", coupling_list_save[end], λ_, maximum(cᵤ), minimum(cᵤ), i*Δt)
             end
         end
-        if (plot_every != 0) && (i % plot_every == 0)
+        if (plot_every != 0) && (i % plot_every == 0) && (i*Δt > 100.0)
             push!(coupling_list_plot, coupling_ratio(cᵤ, cₗ))
             push!(fit_list_plot, domain_fit(cᵤ, cₗ))
             p = plot_spectrum(cᵤ, cₗ, coupling_list_plot, fit_list_plot, step = plot_every)
             savefig("curr.png")
             plot_c_distribution(cᵤ, cₗ)
-            plot_1d_averaged_profile(c_list)
+            plot_1d_averaged_profile(c_list, true)
             if verbose
-                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f", coupling_list_plot[end], λ_, maximum(cᵤ), minimum(cᵤ))
+                pbar.desc = @sprintf("%.3f %.3f %.3f %.3f | Time: %.3f", coupling_list_plot[end], λ_, maximum(cᵤ), minimum(cᵤ), i*Δt)
             end
         end
         if verbose
@@ -385,7 +418,7 @@ cₗ = zeros(N₁,N₂) .+ c₀
 # solve
 #c_list, coupling_list = solver(cᵤ, cₗ, 1000000, save_every=0, plot_every=25)
 #c_list, coupling_list = solver(cᵤ, cₗ, round(Int, 250/Δt), save_every=round(Int, 0.5/Δt), plot_every=round(Int, 0.5/Δt))
-c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 25000/Δt), save_every=round(Int, 10/Δt), plot_every=round(Int, 10/Δt))
+c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 2500/Δt), save_every=round(Int, 10/Δt), plot_every=round(Int, 10/Δt))
 #c_list, coupling_list = solver(cᵤ, cₗ, 100000, save_every=10000, plot_every=0)
-save_state(c_list[end][1], c_list[end][2], "final_large3.jld2")
-animate_time_evolution(c_list, coupling_list, fit_list, "large3.gif", step=100.0)
+#save_state(c_list[end][1], c_list[end][2], "final_large3.jld2")
+#animate_time_evolution(c_list, coupling_list, fit_list, "large3.gif")
