@@ -5,8 +5,8 @@
 # FOLDER_LIST = ["DPPC", "DAPC", "DAPC_LIN", "DAPC_POPC", "DPPC_POPC"]
 
 # Define the arguments for WHICH and FOLDER
-WHICH_LIST=("DPPC" "DAPC" "DAPC_LIN" "DAPC_AS" "DPPC_AS")
-FOLDER_LIST=("DPPC" "DAPC" "DAPC_LIN" "DAPC_POPC" "DPPC_POPC")
+WHICH_LIST=("DAPC_LIN") # ("DPPC" "DAPC" "DAPC_LIN" "DAPC_AS" "DPPC_AS")
+FOLDER_LIST=("CURVED_LINACTANT") # ("DPPC" "DAPC" "DAPC_LIN" "DAPC_POPC" "DPPC_POPC")
 
 
 # Loop through the which and folder lists at the same time

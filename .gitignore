@@ -28,3 +28,7 @@ curr_ave_1d_profile.csv
 test_params
 test_params/*
 *.log
+analysis_results
+new_model
+test_1d_profile.csv
+

@@ -20,14 +20,14 @@ ENV["GKSwstype"] = "100"
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 # physical parameters
-const I = 2/3*sqrt(2) #0.85714*sqrt(2) for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
+const I = 2/3*sqrt(2) #0.85714⋅√2 for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
 const γ = parse(Float64, ARGS[1]) # line tension [kT/nm] = I√(K⋅ϵ)
-const σ = 0.8 # interface width [nm] = √(K/ϵ)
+const σ = 1.2 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
 const λ = parse(Float64, ARGS[2]) # interleaflet coupling [kT/nm²]
 const γₗ = parse(Float64, ARGS[3]) # (maybe omit?) surface line tension coupling [kT/nm] see doi: 10.1038/srep32934
 const dλdt = 0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
-const max_noise_wavelength = 2.5 # [nm]
+const max_noise_wavelength = 2.5 # [nm], 5 nm should give a good thermal noise
 const Kᴸᵒ = 22.9 # bending modulus of Lo phase [kT]
 const Kᴸᵈ = 8.9 # bending modulus of Ld phase [kT]
 const R = 10000 # radius of curvature at the maximum [nm], |R| > 1000 for flat
@@ -35,8 +35,8 @@ const Jₛᴸᵒ = -0.282 # spontaneous curvature of Lo phase [nm^-1]
 const Jₛᴸᵈ = -0.305 # spontaneous curvature of Ld phase [nm^-1]
 const c₀ = 0.0 # bulk field value
 # numerical parameters
-const M₁ = 6 # log(2, grid size)
-const M₂ = 5 # log(2, grid size)
+const M₁ = 5 # log(2, grid size)
+const M₂ = 4 # log(2, grid size)
 const L₁ = 32.0 # box size [nm]
 const Δt = 1.0e-2 # time step [ns]
 # deduced numerical & physical parameters
@@ -154,7 +154,7 @@ function _center_point(c)
     end
     approx_center = L₁ * angle / (2π)
     x = range(0.0, L₁, N₁+1)[1:end-1]
-    x_shifted = (x .- approx_center .+ L₁/2) .% L₁
+    x_shifted = mod1.(x .- approx_center .+ L₁/2, L₁)
     # find the center point via zero point of cumsum
     argsort_x_shifted = sortperm(x_shifted)
     x_shifted = x_shifted[argsort_x_shifted]
@@ -164,8 +164,16 @@ function _center_point(c)
     # do linear interpolation of cumsum
     f = interpolate((x_shifted,), cumsum_c .- 0.5, Gridded(Linear()))
     f = extrapolate(f, Flat())
-    # find the zero point
-    center = (find_zero(f, (0.0, L₁), Bisection()) - L₁/2 + approx_center) % L₁
+    # find the zero point, try catch for errors
+    center = L₁/2
+    try
+        center = mod1(find_zero(f, (0.0, L₁), Bisection()) - L₁/2 + approx_center, L₁)
+    catch e
+        # plot cumsum_c
+        p = plot(x_shifted, cumsum_c, label="cumsum_c")
+        plot!(p, x_shifted, f(x_shifted), label="f")
+        savefig("cumsum_c.png")
+    end
     return center 
 end
 
@@ -181,7 +189,7 @@ function plot_1d_averaged_profile(c_list, ld_com=false)
     if ld_com
         peaks = [_center_point(c) for c in cᵤs]
         xs = [range(0.0, L₁, N₁+1)[1:end-1] for c in cᵤs]
-        xs_shifted = [(x .- peak .+ L₁/2) .% L₁ for (x, peak) in zip(xs, peaks)]
+        xs_shifted = [mod1.((x .- peak .+ L₁/2), L₁) for (x, peak) in zip(xs, peaks)]
         xs_shifted_argsort = [sortperm(x) for x in xs_shifted]
         cᵤs_interp = [interpolate((x[argsort_x],), mean(c[argsort_x], dims=2)[:], Gridded(Linear(Periodic()))) for (x, c, argsort_x) in zip(xs_shifted, cᵤs, xs_shifted_argsort)]
         cₗs_interp = [interpolate((x[argsort_x],), mean(c[argsort_x], dims=2)[:], Gridded(Linear(Periodic()))) for (x, c, argsort_x) in zip(xs_shifted, cₗs, xs_shifted_argsort)]
@@ -223,6 +231,17 @@ function load_state(filename="CHSolver.jld2")
     cᵤ = load(filename, "cᵤ")
     cₗ = load(filename, "cₗ")
     return cᵤ, cₗ
+end
+
+function save_c_list(c_list, filename="CHSolver.jld2")
+    # save c_list
+    save(filename, "c_list", c_list)
+end
+
+function load_c_list(filename="CHSolver.jld2")
+    # load c_list
+    c_list = load(filename, "c_list")
+    return c_list
 end
 
 function divergence(v₁, v₂)
@@ -381,9 +400,11 @@ end
 
 # make initial uniform grid
 #cᵤ = make_grid(c₀, to_mid = true)
-#cₗ = make_grid(c₀, to_mid = true)
+#cₗ = make_grid(c₀, to_mid = false)
 cᵤ = zeros(N₁,N₂) .+ c₀
 cₗ = zeros(N₁,N₂) .+ c₀
 
 # solve
-c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 5000/Δt), save_every=round(Int, 10/Δt), plot_every=0, verbose=false)#round(Int, 10/Δt))
+c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 10000/Δt), save_every=round(Int, 1/Δt), plot_every=0, verbose=false)
+# save c_list
+save_c_list(c_list, folder*filename*"_c_list.jld2")
