@@ -20,7 +20,7 @@ const I = 2/3*sqrt(2) #0.85714*sqrt(2) # for f(c)=0.25*(c⁶-1)², for regular C
 const γ = 2.0 # line tension [kT/nm] = I√(K⋅ϵ)
 const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [kT/ns]
-const max_noise_wavelength = 2.0 # [nm]
+const max_noise_wavelength = 2.5 # [nm]
 const Δx_mc = 2.5e-2 # monte carlo step size
 const c₀ = 0.0 # bulk field value
 # numerical parameters
