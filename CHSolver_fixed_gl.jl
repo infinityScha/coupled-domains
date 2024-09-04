@@ -20,26 +20,20 @@ ENV["GKSwstype"] = "100"
 # following https://www.sciencedirect.com/science/article/pii/S001046559700115X
 
 which_lipid = ARGS[1]
-#thicknesses = Dict("DPPC"=>[1.401, 1.024], "DAPC"=>[1.685, 1.023])#, "DAPC"=>[1.685, 1.023])
 
-γₑₗs = Dict("DPPC"=>0.3, "DAPC"=>0.8)
+γₑₗs = Dict("DPPC"=>0.25, "DAPC"=>0.7)
 
 # physical parameters
 const I = 2/3*sqrt(2) #2/3*sqrt(2) #0.85714⋅√2 for f(c)=0.25*(c⁶-1)², for regular CH it is 2⋅√2/3
 const γₗᵢₚ = parse(Float64, ARGS[2])
-const σ = 1.2 # interface width [nm] = √(K/ϵ)
-const ζ = 1.0 # Cook noise [ns⋅kT/nm] # TODO: check units
+const σ = 1.2 # interface width [nm] = √(K/2ϵ)
+const ζ = 1.0 # Cook noise should be normalized to kT, in this case kT = 1
 const λ = parse(Float64, ARGS[3]) # interleaflet coupling [kT/nm²]
 const dλdt = 0.000 # rate of change of interleaflet coupling [kT/nm²/ns]
 const max_noise_wavelength = 2.5 # [nm], 5 nm should give a good thermal noise
 const Kᴸᵒ = 23.0 # bending modulus of Lo phase [kT]
 const Kᴸᵈ = 9.0 # bending modulus of Ld phase [kT]
-#const hᴸᵒ₀ = thicknesses[which_lipid][1] # equilibrium thickness of Lo phase [nm]
-#const kₜᴸᵒ = 69.6 # tilt modulus of Lo phase [kT / nm²]
-#const kₜᴸᵈ = 14.6 # tilt modulus of Ld phase [kT / nm²]
-#const hᴸᵈ₀ = thicknesses[which_lipid][2] # equilibrium thickness of Ld phase [nm]
 const γₑₗ = γₑₗs[which_lipid]
- #sqrt(Kᴸᵒ*kₜᴸᵒ*Kᴸᵈ*kₜᴸᵈ)/(sqrt(Kᴸᵒ*kₜᴸᵒ)+sqrt(Kᴸᵈ*kₜᴸᵈ)) * ((hᴸᵒ₀-hᴸᵈ₀)/(hᴸᵒ₀+hᴸᵈ₀)/0.5)^2 # line tension of Lo-Ld interface [kT/nm] 
 println(γₑₗ)
 const γ = γₑₗ + γₗᵢₚ # line tension [kT/nm] = √I(K⋅ϵ)
 const R = parse(Float64, ARGS[4]) # radius of curvature [nm]
@@ -47,8 +41,8 @@ const Jₛᴸᵒ = -0.30 # spontaneous curvature of Lo phase [nm^-1]
 const Jₛᴸᵈ = -0.30 # spontaneous curvature of Ld phase [nm^-1]
 const c₀ = parse(Float64, ARGS[5]) # bulk field value 
 # numerical parameters
-const M₁ = 6 # log(2, grid size)
-const M₂ = 5 # log(2, grid size)
+const M₁ = 8 # log(2, grid size)
+const M₂ = 7 # log(2, grid size)
 const L₁ = 32.0 # box size [nm]
 const Δt = 1.0e-2 # time step [ns]
 # deduced numerical & physical parameters
@@ -56,7 +50,7 @@ const N₁ = 2^M₁ # grid size
 const N₂ = 2^M₂ # grid size
 const K = γ*σ/I
 const ϵ = K/σ^2
-const L₂ = 14.0 #L₁*2.0^(M₂-M₁) # box size [nm]
+const L₂ = 14.0 # box size [nm]
 
 const γₗ = 2*γₑₗ/I*sqrt(K/ϵ) # indirect coupling [kT]
 println("K = ", K, " ϵ = ", ϵ, " γ = ", γ, " γₗ = ", γₗ)
@@ -113,6 +107,7 @@ const A = 1.0./temp
 const B = -ϵ*Δt*k²./temp
 const C = -Δt./temp
 const η = sqrt(2.0*ζ/Δt/L₁*N₁/L₂*N₂)
+const mask = k² .> (1.001*4.0*π*π/max_noise_wavelength/max_noise_wavelength)
 # filename and folder for saving
 # filename include the ARGS
 const folder = "new_model/$(ARGS[1])/$(ARGS[2])/$(ARGS[3])/$(ARGS[4])/$(ARGS[5])/$(ARGS[6])/"
@@ -272,10 +267,10 @@ function noise()
     f₂ = randn(N₁, N₂)
     # compute divergence of random vector field
     f̂ = fft(divergence(f₁, f₂)*η)
+    # set zero mode to zero (no global translation, theoretically should be already zero but numerical errors...)
     f̂[1,1] = 0.0
     # keep only fluctuations with k > max_noise_wavelength^-1 
-    mask = k² .> (1.001*4.0*π*π/max_noise_wavelength/max_noise_wavelength)
-    f̂[mask] .*= 0.0 #4.0*π*π/max_noise_wavelength/max_noise_wavelength./k²[mask]
+    f̂[mask] .*= 0.0
     return f̂
 end
 

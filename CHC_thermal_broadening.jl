@@ -22,11 +22,11 @@ const σ = 0.8 # interface width [nm] = √(K/ϵ)
 const ζ = 1.0 # Cook noise [kT/ns]
 const max_noise_wavelength = 2.5 # [nm]
 const Δx_mc = 2.5e-2 # monte carlo step size
-const c₀ = 0.0 # bulk field value
+const c₀ = 1.0 # bulk field value
 # numerical parameters
 const M = 5 # log(2, grid size)
-const L = 24.0 #max_noise_wavelength * (2^M) # box size [nm]
-const Δt = 5.0e-3 # time step [ns]
+const L = 16.0 #max_noise_wavelength * (2^M) # box size [nm]
+const Δt = 1.0e-2 # time step [ns]
 # deduced numerical & physical parameters
 const N = 2^M # grid size
 const K = γ*σ/I
@@ -225,6 +225,8 @@ function plot_energy_kernel_density(c_list, label, ; p = nothing)
     en_list = en_list[abs.(en_list .- mean(en_list)) .< 2*std(en_list)]
     kde_ = kde(en_list)
     plot!(p, kde_.x, kde_.density, label=label, linewidth=2)
+    xlabel!("Energy [kT]")
+    ylabel!("States Density")
     return p
 end
 
@@ -239,6 +241,8 @@ function plot_c_kernel_density(c_list, label, ; p = nothing)
     c_list_ = c_list_[abs.(c_list_ .- mean(c_list_)) .< 2*std(c_list_)]
     kde_ = kde(c_list_)
     plot!(p, kde_.x, kde_.density, label=label, linewidth=2)
+    xlabel!("c")
+    ylabel!("P(c)")
     return p
 end
 
@@ -278,13 +282,13 @@ c = ones(N,N).*c₀
 # check if energy makes sense
 println("Energy = ", energy(c), " expected = ", 2*γ*L)
 # run noise
-c_list_noise = solver_noise(c, round(Int, 500.0/Δt), save_every=round(Int, 0.1/Δt), plot_every=10000, noisy=true)
+c_list_noise = solver_noise(c, round(Int, 2500.0/Δt), save_every=round(Int, 0.1/Δt), plot_every=1000, noisy=true)
 #c_list_noise = solver_noise(c, round(Int, 10.0/Δt), save_every=round(Int, 0.01/Δt), plot_every=1000, noisy=true)
 # plot energy kernel density for 2nd half
 p1 = plot_energy_kernel_density(c_list_noise[length(c_list_noise)÷2:end], "Noise")
 p2 = plot_c_kernel_density(c_list_noise[length(c_list_noise)÷2:end], "Noise")
 # run MC
-c_list_mc = solver_mc(c_list_noise[end-1], 50000, save_every=100, plot_every=5000)
+c_list_mc = solver_mc(c_list_noise[end-1], 500000, save_every=100, plot_every=5000)
 # plot energy kernel density
 p = plot_energy_kernel_density(c_list_mc[length(c_list_mc)÷2:end], "MC", p=p1)
 p = plot_c_kernel_density(c_list_mc[length(c_list_mc)÷2:end], "MC", p=p2)
