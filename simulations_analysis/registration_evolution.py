@@ -16,9 +16,9 @@ from scipy.spatial import cKDTree
 import warnings
 warnings.filterwarnings("ignore")
 
-lipid = "DAPC"
-folder = "CURVED_LINACTANT"
-which = "DAPC_LIN"
+lipid = "DPPC"
+folder = "DPPC"
+which = "DPPC"
 
 # Parameters
 sim_dir = "/mnt/635d0d06-878a-4beb-a0b2-6ced0caa25db/SIMULATIONS/curved-domains/trajectories/{}/".format(folder)
@@ -31,9 +31,10 @@ MIN_SAMPLES_LO = 5
 EPS_LD = 14
 MIN_SAMPLES_LD = 4
 
-START = 5000
+START = 0
+END = 2500
 SKIP = 10
-EQUILIBRIUM = 5000
+EQUILIBRIUM = 1000
 
 PLOTS_DIR = "simulations_analysis/plots/{}/".format(which)
 
@@ -193,9 +194,9 @@ def worker(i):
     total_overlap_arr = []
     total_area_arr = []
     print(i, "start")
-    len_traj = len(u.trajectory[START::SKIP])
+    len_traj = len(u.trajectory[START:END:SKIP])
     count = 0
-    for ts in u.trajectory[START::SKIP]:
+    for ts in u.trajectory[START:END:SKIP]:
         if np.random.rand() < 0.3:
             print(count, "/", len_traj, "for", i)
         leaflet1, leaflet2 = update_leaflets()

@@ -5,8 +5,8 @@ using Printf
 using JLD2
 using Statistics
 
-const M₁ = 6 # log(2, grid size)
-const M₂ = 5 # log(2, grid size)
+const M₁ = 7 # log(2, grid size)
+const M₂ = 6 # log(2, grid size)
 # deduced numerical & physical parameters
 const N₁ = 2^M₁ # grid size
 const N₂ = 2^M₂ # grid size
@@ -64,7 +64,7 @@ function make_dataframe(filename)
     which_lipid = ["DAPC", "DPPC"]
     gammas = [0.5, 1.0, 2.0, 4.0]
     lambdas = [0.0, 0.1, 0.3, 0.5, 1.0]
-    Rs = [100.0, 75.0, 50.0, 40.0, 30.0, 20.0, 10.0, 5.0]
+    Rs = [100.0, 75.0, 50.0, 40.0, 30.0, 27.5, 25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0, 7.5, 5.0]
     c0s = [0.0]
     is_mids = ["true", "false"]
     runs = 1:50
@@ -84,16 +84,14 @@ function make_dataframe(filename)
         path = joinpath("new_model", lipid, string(gamma), string(lambda), string(R), string(c0), is_mid, string(run) * ".jld2")
 
         # Load the data, keep only last 10 frames
-        c_list = load(path, "c_list")[end-9:end]
+        c_list = load(path, "c_list")[end-19:end]
 
         # Calculate the coupling ratio
-        coupling_ratios = [_coupling_ratio(c[1], c[2]) for c in c_list]
-        coupling_ratio = mean(coupling_ratios)
-        # Calculate the domain fit
-        domain_fits = [_domain_fit(c[1], c[2]) for c in c_list]
-        domain_fit1 = mean([d[1] for d in domain_fits])
-        domain_fit2 = mean([d[2] for d in domain_fits])
-        df = push!(df, [lipid, gamma, lambda, R, c0, is_mid, run, coupling_ratio, domain_fit1, domain_fit2])
+        for c in c_list
+            coupling_ratio = _coupling_ratio(c[1], c[2])
+            domain_fit1, domain_fit2 = _domain_fit(c[1], c[2])
+            df = push!(df, [lipid, gamma, lambda, R, c0, is_mid, run, coupling_ratio, domain_fit1, domain_fit2])
+        end
         next!(p)
     end
     # save the DataFrame to a .csv file

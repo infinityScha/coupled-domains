@@ -41,15 +41,15 @@ const Jₛᴸᵒ = -0.30 # spontaneous curvature of Lo phase [nm^-1]
 const Jₛᴸᵈ = -0.30 # spontaneous curvature of Ld phase [nm^-1]
 const c₀ = parse(Float64, ARGS[5]) # bulk field value 
 # numerical parameters
-const M₁ = 8 # log(2, grid size)
-const M₂ = 7 # log(2, grid size)
+const M₁ = 7 # log(2, grid size)
+const M₂ = 6 # log(2, grid size)
 const L₁ = 32.0 # box size [nm]
-const Δt = 1.0e-2 # time step [ns]
+const Δt = 0.05 # time step [ns]
 # deduced numerical & physical parameters
 const N₁ = 2^M₁ # grid size
 const N₂ = 2^M₂ # grid size
-const K = γ*σ/I
-const ϵ = K/σ^2
+const K = sqrt(2)*γ*σ/I
+const ϵ = γ/(sqrt(2)*I*σ)
 const L₂ = 14.0 # box size [nm]
 
 const γₗ = 2*γₑₗ/I*sqrt(K/ϵ) # indirect coupling [kT]
@@ -136,8 +136,10 @@ function plot_spectrum(cᵤ, cₗ, coupling_list, fit_list, ;step=1.0)
     fitₗ = [x[2] for x in fit_list]
     plot!(coupling_plot, t, fitᵤ, color=:red, label="fit u")
     plot!(coupling_plot, t, fitₗ, color=:blue, label="fit l")
+    # plot the heatmaps and the coupling plot
     p = plot(heatmap1, heatmap2, coupling_plot, layout=(1,3), size=(1450,500))
-    plot!(framestyle=:box, foreground_color=:black)
+    # tight layout
+    plot!(framestyle=:none, foreground_color=:black)
     return p
 end
 
