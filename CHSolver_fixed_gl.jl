@@ -424,4 +424,4 @@ end
 # solve
 c_list, coupling_list, fit_list = solver(cᵤ, cₗ, round(Int, 5000/Δt), save_every=round(Int, 50/Δt), plot_every=0, verbose=false)
 # save c_list
-save_c_list(c_list, folder*filename*".jld2")
+save_c_list(c_list[end-19,end], folder*filename*".jld2")

@@ -59,6 +59,12 @@ function _domain_fit(cᵤ, cₗ)
 end
 
 
+function save_c_list(c_list, filename="CHSolver.jld2")
+    # save c_list
+    save(filename, "c_list", c_list)
+end
+
+
 function make_dataframe(filename)
     # Define your parameter lists
     which_lipid = ["DAPC", "DPPC"]
@@ -83,14 +89,19 @@ function make_dataframe(filename)
         # Construct the path to the .jld2 file
         path = joinpath("new_model", lipid, string(gamma), string(lambda), string(R), string(c0), is_mid, string(run) * ".jld2")
 
-        # Load the data, keep only last 10 frames
-        c_list = load(path, "c_list")[end-19:end]
-
+        # Load the data, keep only last 20 frames
+        c_list = load(path, "c_list")
+        if length(c_list) > 20
+            #  save the last 20 frames
+            c_list = c_list[end-19:end]
+            save_c_list(c_list, path)
+        end
+        
         # Calculate the coupling ratio
         for c in c_list
-            coupling_ratio = _coupling_ratio(c[1], c[2])
-            domain_fit1, domain_fit2 = _domain_fit(c[1], c[2])
-            df = push!(df, [lipid, gamma, lambda, R, c0, is_mid, run, coupling_ratio, domain_fit1, domain_fit2])
+           coupling_ratio = _coupling_ratio(c[1], c[2])
+           domain_fit1, domain_fit2 = _domain_fit(c[1], c[2])
+           df = push!(df, [lipid, gamma, lambda, R, c0, is_mid, run, coupling_ratio, domain_fit1, domain_fit2])
         end
         next!(p)
     end
